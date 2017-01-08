@@ -1,0 +1,132 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="소스 파일">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="헤더 파일">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="리소스 파일">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav</Extensions>
+    </Filter>
+    <Filter Include="Common">
+      <UniqueIdentifier>{82f5c06c-1e0e-40f0-bc40-5489da9cbfe5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Network">
+      <UniqueIdentifier>{aeb00bbf-cd03-404c-a45e-663abb729ce7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Stream">
+      <UniqueIdentifier>{c3c2e762-dd4f-4ec4-8a8a-74c0a52e4e76}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Codec">
+      <UniqueIdentifier>{e21a08fa-3b91-48b8-b03b-571f225ed2b5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Multiplex">
+      <UniqueIdentifier>{deaa360f-42b6-49d4-94ed-da472a6cbe0a}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="StreamServer.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="stdafx.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\ConnectSocket.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\SocketThread.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="ListenSocket.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="SessionSocket.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="Stream\StreamSource.cpp">
+      <Filter>Stream</Filter>
+    </ClCompile>
+    <ClCompile Include="Stream\StreamThread.cpp">
+      <Filter>Stream</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Codec\Codec.cpp">
+      <Filter>Codec</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Codec\CodecManager.cpp">
+      <Filter>Codec</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Codec\Decoder.cpp">
+      <Filter>Codec</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Codec\Encoder.cpp">
+      <Filter>Codec</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Multiplex\Demuxer.cpp">
+      <Filter>Multiplex</Filter>
+    </ClCompile>
+    <ClCompile Include="SessionThread.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="stdafx.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="targetver.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\Common_Protocol.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\CommonDef.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\ConnectSocket.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\SocketThread.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="ListenSocket.h">
+      <Filter>Network</Filter>
+    </ClInclude>
+    <ClInclude Include="SessionSocket.h">
+      <Filter>Network</Filter>
+    </ClInclude>
+    <ClInclude Include="Stream\StreamSource.h">
+      <Filter>Stream</Filter>
+    </ClInclude>
+    <ClInclude Include="Stream\StreamThread.h">
+      <Filter>Stream</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Codec\Codec.h">
+      <Filter>Codec</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Codec\CodecManager.h">
+      <Filter>Codec</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Codec\Common.h">
+      <Filter>Codec</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Codec\Decoder.h">
+      <Filter>Codec</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Codec\Encoder.h">
+      <Filter>Codec</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Multiplex\Demuxer.h">
+      <Filter>Multiplex</Filter>
+    </ClInclude>
+    <ClInclude Include="SessionThread.h">
+      <Filter>Network</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="ReadMe.txt" />
+  </ItemGroup>
+</Project>
