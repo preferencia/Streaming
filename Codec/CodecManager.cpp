@@ -47,7 +47,10 @@ int CCodecManager::CreateCodec(CCodec** ppCodec, int nCodecType)
 	return 0;
 }
 
-void CCodecManager::DestroyCodec(CCodec* pCodec)
+void CCodecManager::DestroyCodec(CCodec** ppCodec)
 {
-	SAFE_DELETE(pCodec);
+    if (NULL != ppCodec)
+    {
+        SAFE_DELETE(*ppCodec);
+    }	
 }
