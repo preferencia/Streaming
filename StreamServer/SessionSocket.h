@@ -16,7 +16,7 @@ protected:
 private:
 	virtual int		ProcVideoList();
 	virtual int		ProcFileOpen(char* pszFileName);
-	virtual int		ProcSelectResolution(UINT uiWidth, UINT uiHeight);
+	virtual int		ProcSelectResolution(UINT uiWidth, UINT uiHeight, UINT uiResetResolution);
 	virtual int		ProcSetPlayStatus(UINT uiPlayStatus);
 
 private:

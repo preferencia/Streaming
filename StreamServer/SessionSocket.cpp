@@ -90,7 +90,7 @@ UINT CSessionSocket::ProcessReceive(char* lpBuf, int nDataLen)
 			PVS_SELECT_RESOLUTION_REQ pReqData		= (PVS_SELECT_RESOLUTION_REQ)(lpBuf + sizeof(VS_HEADER));
 			if (NULL != pReqData)
 			{
-				ProcSelectResolution(pReqData->uiWidth, pReqData->uiHeight);
+				ProcSelectResolution(pReqData->uiWidth, pReqData->uiHeight, pReqData->uiResetResolution);
 			}
 		}
 		break;
@@ -229,16 +229,23 @@ int CSessionSocket::ProcFileOpen(char* pszFileName)
 	return 0;
 }
 
-int CSessionSocket::ProcSelectResolution(UINT uiWidth, UINT uiHeight)
+int CSessionSocket::ProcSelectResolution(UINT uiWidth, UINT uiHeight, UINT uiResetResolution)
 {
 	if (NULL == m_pStreamThread)
 	{
 		return -1;
 	}
 
-	m_pStreamThread->SetResolution(uiWidth, uiHeight);
+    int nResult = 0;
 
-	return m_pStreamThread->Start();
+	m_pStreamThread->SetResolution(uiWidth, uiHeight, uiResetResolution);
+
+    if (0 == uiResetResolution)
+    {
+        nResult = m_pStreamThread->Start();
+    }
+
+    return nResult;
 }
 
 int CSessionSocket::ProcSetPlayStatus(UINT uiPlayStatus)

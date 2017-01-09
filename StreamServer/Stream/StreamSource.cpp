@@ -13,7 +13,6 @@ CStreamSource::CStreamSource()
 	m_pDemuxer				= NULL;
 	m_pCodecManager			= NULL;
 	m_pDecoder				= NULL;
-	m_pDecoder2				= NULL;
 	m_pEncoder				= NULL;
 
 	m_pFmtCtx				= NULL;
@@ -35,6 +34,8 @@ CStreamSource::CStreamSource()
 
 	m_llEncVideoBitRate		= 0LL;
 	m_llEncAudioBitRate		= 0LL;
+
+    m_bResetEncoder         = false;
 
 	m_hSteramCallbackMutex	= NULL;
 }
@@ -149,10 +150,15 @@ int CStreamSource::Init(void* pParent, StreamCallback pStreamCallbackFunc, char*
 }
 
 
-void CStreamSource::SetResolution(int nWidth, int nHeight)
+void CStreamSource::SetResolution(int nWidth, int nHeight, int nResetResolution)
 {
 	m_nEncVideoWidth	= nWidth;
 	m_nEncVideoHeight	= nHeight;
+
+    if ((1 == nResetResolution) && (NULL != m_pCodecManager) && (NULL != m_pEncoder))
+    {
+        m_bResetEncoder = true;
+    }
 }
 
 
@@ -372,6 +378,12 @@ int CStreamSource::DataProcCallback(void* pObject, int nProcDataType, unsigned i
 		break;
 	}
 
+    if (true == pThis->m_bResetEncoder)
+    {
+        pThis->SetEncoder();
+        pThis->m_bResetEncoder = false;
+    }
+
 	return 0;
 }
 
@@ -506,7 +518,7 @@ int64_t CStreamSource::EncodeDelayedFrame(int nStreamIndex)
 {
 	int64_t			llRet = -1;
 
-	if ((NULL == m_pEncoder) || (NULL == m_pDecoder2))
+	if (NULL == m_pEncoder)
 	{
 		return llRet;
 	}
@@ -540,7 +552,7 @@ int CStreamSource::SetEncoder()
 
 	if (NULL != m_pEncoder)
 	{
-		m_pCodecManager->DestroyCodec(m_pEncoder);
+		m_pCodecManager->DestroyCodec(&m_pEncoder);
 	}
 
 	// Init Encoder
@@ -582,9 +594,8 @@ void CStreamSource::CodecCleanUp()
 {
 	if (NULL != m_pCodecManager)
 	{
-		m_pCodecManager->DestroyCodec(m_pDecoder);
-		m_pCodecManager->DestroyCodec(m_pDecoder2);
-		m_pCodecManager->DestroyCodec(m_pEncoder);
+		m_pCodecManager->DestroyCodec(&m_pDecoder);
+		m_pCodecManager->DestroyCodec(&m_pEncoder);
 
 		SAFE_DELETE(m_pCodecManager);
 	}

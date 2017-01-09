@@ -13,7 +13,7 @@ public:
 	virtual ~CStreamSource();
 
 	int					Init(void* pParent, StreamCallback pStreamCallbackFunc, char* pszSrcFileName);
-	void				SetResolution(int nWidth, int nHeight);
+	void				SetResolution(int nWidth, int nHeight, int nResetResolution);
 	int					Start();
 	bool 				Pause();
 	void				Stop();
@@ -40,7 +40,6 @@ private:
 	CDemuxer*			m_pDemuxer;
 	CCodecManager*		m_pCodecManager;
 	CCodec*				m_pDecoder;
-	CCodec*				m_pDecoder2;
 	CCodec*				m_pEncoder;
 
 	AVFormatContext*	m_pFmtCtx;
@@ -62,6 +61,8 @@ private:
 
 	int64_t				m_llEncVideoBitRate;
 	int64_t				m_llEncAudioBitRate;
+
+    bool                m_bResetEncoder;
 
 #ifdef _WINDOWS
 	HANDLE				m_hSteramCallbackMutex;

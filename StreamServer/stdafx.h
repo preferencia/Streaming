@@ -35,4 +35,8 @@ typedef struct timeval	TIMEVAL;
 
 using namespace std;
 
+#ifndef snprintf
+#define snprintf _snprintf
+#endif
+
 extern void TraceLog(const char* pszFmt, ...);

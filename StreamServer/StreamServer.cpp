@@ -10,7 +10,7 @@ int main(int argc, char* argv[])
 {
 	if (2 > argc)
 	{
-		ErrorHandling("Need More Argument!");
+		TraceLog("Need More Argument!");
 		return -1;
 	}
 
@@ -107,25 +107,4 @@ int main(int argc, char* argv[])
 #endif
 */
 	return 0;
-}
-
-static bool ErrorHandling(const char* pszFmt, ...)
-{
-	if (NULL != pszFmt)
-	{
-		char szLog[_DEC_MAX_BUF_SIZE] = {0, };
-
-		va_list args;
-		va_start(args, pszFmt);
-		vsprintf(szLog, pszFmt, args);
-		va_end(args);
-
-#ifdef _WINDOWS
-		OutputDebugString(szLog);
-		OutputDebugString("\n");
-#endif
-		cout << szLog << endl;
-	}
-
-	return false;
 }

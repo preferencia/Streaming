@@ -31,7 +31,7 @@ int CStreamThread::Init(void* pParent, StreamCallback pStreamCallbackFunc, char*
 	return 0;
 }
 
-void CStreamThread::SetResolution(int nWidth, int nHeight)
+void CStreamThread::SetResolution(int nWidth, int nHeight, int nResetResolution)
 {
 	CStreamSource* pStreamSource = (CStreamSource*)m_pStreamSource;
 	if (NULL == pStreamSource)
@@ -39,7 +39,7 @@ void CStreamThread::SetResolution(int nWidth, int nHeight)
 		return;
 	}
 
-	pStreamSource->SetResolution(nWidth, nHeight);
+    pStreamSource->SetResolution(nWidth, nHeight, nResetResolution);
 }
 
 int CStreamThread::Start()
