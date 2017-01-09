@@ -46,6 +46,7 @@ private:
 	int 		SetDecoder			(char* pData);
 	int			ProcFrameData		(char* pData);
 	void		SetPlayStatus		(char* pData);
+    void        SetResolution       (BOOL bResetResolution = FALSE);
 
 public:
 	virtual BOOL PreTranslateMessage(MSG* pMsg);
@@ -53,6 +54,7 @@ public:
 	afx_msg void OnBnClickedButtonReqVideoList();
 	afx_msg void OnBnClickedButtonPlay();
 	afx_msg void OnBnClickedButtonStop();
+    afx_msg void OnCbnSelchangeComboHeight();
 
 private:
 	CClientThread*	m_pClientThread;
@@ -66,10 +68,10 @@ private:
 	
 	VS_RAW_INFO		m_VsRawInfo;
 
+    BOOL			m_bVideoPlayRunning;
+	BOOL			m_bPause;
+
 	// Test
 	FILE*			m_fpVideoScalingFile;
 	FILE*			m_fpAudioResampleFile;
-
-	BOOL			m_bVideoPlayRunning;
-	BOOL			m_bPause;
 };
