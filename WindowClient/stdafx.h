@@ -53,8 +53,9 @@
 
 using namespace std;
 
-
-
+#ifndef snprintf
+#define snprintf _snprintf
+#endif
 
 #ifdef _UNICODE
 #if defined _M_IX86
