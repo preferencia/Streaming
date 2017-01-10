@@ -80,7 +80,7 @@ UINT CSessionSocket::ProcessReceive(char* lpBuf, int nDataLen)
 			PVS_FILE_OPEN_REQ pReqData				= (PVS_FILE_OPEN_REQ)(lpBuf + sizeof(VS_HEADER));
 			if (NULL != pReqData)
 			{
-				ProcFileOpen(pReqData->pszFileName);
+				ProcFileOpen(pReqData->pszFileName, nRecvDataLen);
 			}
 		}
 		break;
@@ -203,7 +203,7 @@ int CSessionSocket::ProcVideoList()
 	return 0;
 }
 
-int CSessionSocket::ProcFileOpen(char* pszFileName)
+int CSessionSocket::ProcFileOpen(char* pszFileName, int nFileNameLen)
 {
 	if (NULL == pszFileName)
 	{
@@ -211,8 +211,12 @@ int CSessionSocket::ProcFileOpen(char* pszFileName)
 	}
 
 	char szPath[1024] = { 0, };
-	snprintf(szPath, 1023, "Video/%s", pszFileName);
+	char* pszCopyFileName = new char[nFileNameLen + 1];
+	strncpy(pszCopyFileName, pszFileName, nFileNameLen);
+	pszCopyFileName[nFileNameLen] = NULL;
+	snprintf(szPath, 1023, "Video/%s", pszCopyFileName);
 
+	SAFE_DELETE_ARRAY(pszCopyFileName);
 	SAFE_DELETE(m_pStreamThread);
 
 	m_pStreamThread = new CStreamThread;

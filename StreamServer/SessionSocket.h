@@ -14,8 +14,8 @@ protected:
 	virtual UINT	ProcessReceive(char* lpBuf, int nDataLen);
 
 private:
-	virtual int		ProcVideoList();
-	virtual int		ProcFileOpen(char* pszFileName);
+	virtual int		ProcVideoList(); 
+	virtual int		ProcFileOpen(char* pszFileName, int nFileNameLen);
 	virtual int		ProcSelectResolution(UINT uiWidth, UINT uiHeight, UINT uiResetResolution);
 	virtual int		ProcSetPlayStatus(UINT uiPlayStatus);
 
