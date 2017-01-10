@@ -77,7 +77,6 @@ typedef struct VS_SELECT_RESOLUTION_C2S
 {
 	UINT		uiWidth;
 	UINT		uiHeight;
-    UINT        uiResetResolution;
 } VS_SELECT_RESOLUTION_REQ, *PVS_SELECT_RESOLUTION_REQ;
 
 typedef struct VS_SELECT_RESOLUTION_S2C
