@@ -236,9 +236,16 @@ int CSessionSocket::ProcSelectResolution(UINT uiWidth, UINT uiHeight, UINT uiRes
 		return -1;
 	}
 
+    int nResult = 0;
+
 	m_pStreamThread->SetResolution(uiWidth, uiHeight, uiResetResolution);
 
-    return (0 == uiResetResolution) ? m_pStreamThread->Start() : 0;
+    if (0 == uiResetResolution)
+    {
+        nResult = m_pStreamThread->Start();
+    }
+
+    return nResult;
 }
 
 int CSessionSocket::ProcSetPlayStatus(UINT uiPlayStatus)
