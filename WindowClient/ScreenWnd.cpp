@@ -21,7 +21,8 @@ CScreenWnd::CScreenWnd(CWnd* pParent /*=NULL*/)
 }
 
 CScreenWnd::~CScreenWnd()
-{	
+{
+	m_pParentWnd	= NULL;
 }
 
 void CScreenWnd::DoDataExchange(CDataExchange* pDX)

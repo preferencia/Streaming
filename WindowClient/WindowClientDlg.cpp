@@ -68,12 +68,19 @@ CWindowClientDlg::CWindowClientDlg(CWnd* pParent /*=NULL*/)
 	m_bVideoPlayRunning		= false;
 	m_bPause				= false;
 
-	memset(&m_VsRawInfo,		0,	sizeof(m_VsRawInfo));
+	m_pScreenWnd			= NULL;
+	m_nScreenWidth			= 0;
+	m_nScreenHeight			= 0;
+
+	memset(&m_VsRawInfo, 0, sizeof(m_VsRawInfo));
 }
 
 CWindowClientDlg::~CWindowClientDlg()
 {
-	OnBnClickedButtonStop();
+	if (true == m_bVideoPlayRunning)
+	{
+		OnBnClickedButtonStop();
+	}
 
 	m_pCodecManager->DestroyCodec(&m_pDecoder);
 	SAFE_DELETE(m_pCodecManager);
@@ -90,6 +97,8 @@ CWindowClientDlg::~CWindowClientDlg()
 		fclose(m_fpAudioResampleFile);
 		m_fpAudioResampleFile = NULL;
 	}
+
+	DestroyScreenWnd();
 }
 
 void CWindowClientDlg::DoDataExchange(CDataExchange* pDX)
@@ -104,11 +113,14 @@ BEGIN_MESSAGE_MAP(CWindowClientDlg, CDialog)
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
 	//}}AFX_MSG_MAP
-	ON_BN_CLICKED(IDC_BUTTON_CONNECT,			&CWindowClientDlg::OnBnClickedButtonConnect)
-	ON_BN_CLICKED(IDC_BUTTON_REQ_VIDEO_LIST,	&CWindowClientDlg::OnBnClickedButtonReqVideoList)
-	ON_BN_CLICKED(IDC_BUTTON_PLAY,				&CWindowClientDlg::OnBnClickedButtonPlay)
-	ON_BN_CLICKED(IDC_BUTTON_STOP,				&CWindowClientDlg::OnBnClickedButtonStop)
-    ON_CBN_SELCHANGE(IDC_COMBO_HEIGHT, &CWindowClientDlg::OnCbnSelchangeComboHeight)
+	ON_BN_CLICKED(IDC_BUTTON_CONNECT, &CWindowClientDlg::OnBnClickedButtonConnect)
+	ON_BN_CLICKED(IDC_BUTTON_REQ_VIDEO_LIST, &CWindowClientDlg::OnBnClickedButtonReqVideoList)
+	ON_BN_CLICKED(IDC_BUTTON_PLAY, &CWindowClientDlg::OnBnClickedButtonPlay)
+	ON_BN_CLICKED(IDC_BUTTON_STOP, &CWindowClientDlg::OnBnClickedButtonStop)
+
+	ON_MESSAGE(UM_SCREEN_CREATE_MSG, OnRecvScreenCreateMsg)
+	ON_MESSAGE(UM_SCREEN_CLOSE_MSG, OnRecvScreenCloseMsg)
+	ON_CBN_SELCHANGE(IDC_COMBO_HEIGHT, &CWindowClientDlg::OnCbnSelchangeComboHeight)
 END_MESSAGE_MAP()
 
 
@@ -145,7 +157,7 @@ BOOL CWindowClientDlg::OnInitDialog()
 
 	// TODO: 여기에 추가 초기화 작업을 추가합니다.
 	SetDlgItemText(IDC_IPADDRESS_SERVER, _T("127.0.0.1"));
-	SetDlgItemText(IDC_EDIT_PORT,		 _T("23456"));
+	SetDlgItemText(IDC_EDIT_PORT, _T("12345"));
 
 	return TRUE;  // 포커스를 컨트롤에 설정하지 않으면 TRUE를 반환합니다.
 }
@@ -256,6 +268,8 @@ int CWindowClientDlg::RecvProcCallback(	void*			pObject,
 				fclose(pThis->m_fpAudioResampleFile);
 				pThis->m_fpAudioResampleFile = NULL;
 			}
+
+			pThis->m_pScreenWnd->ShowWindow(FALSE);
 		}
 		break;
 
@@ -326,7 +340,7 @@ void CWindowClientDlg::InsertVideoHeight(char* pData)
 		memcpy(&m_VsRawInfo, pRepData, sizeof(VS_FILE_OPEN_REP));
 	}
 
-    SetResolution();
+	SetResolution();
 }
 
 int CWindowClientDlg::SetDecoder(char* pData)
@@ -398,6 +412,10 @@ int CWindowClientDlg::SetDecoder(char* pData)
 
 		m_fpAudioResampleFile = fopen(szAudioResampleFile, "wb");
 	}
+
+	m_nScreenWidth	= pRepData->uiWidth;
+	m_nScreenHeight = pRepData->uiHeight;
+	PostMessage(UM_SCREEN_CREATE_MSG, 0, 0);
 
 	m_ComboHeight.EnableWindow(TRUE);
 
@@ -486,10 +504,10 @@ void CWindowClientDlg::SetPlayStatus(char* pData)
 	PVS_SET_PLAY_STATUS pRepData = (PVS_SET_PLAY_STATUS)pData;
 
 	GetDlgItem(IDC_BUTTON_PLAY)->SetWindowText((0 == pRepData->uiPlayStatus) ? _T("Pause") : _T("Play"));
-    
-    if (2 == pRepData->uiPlayStatus)
-    {
-        if (NULL != m_fpVideoScalingFile)
+
+	if (2 == pRepData->uiPlayStatus)
+	{
+		if (NULL != m_fpVideoScalingFile)
 		{
 			fclose(m_fpVideoScalingFile);
 			m_fpVideoScalingFile = NULL;
@@ -501,13 +519,15 @@ void CWindowClientDlg::SetPlayStatus(char* pData)
 			m_fpAudioResampleFile = NULL;
 		}
 
-        GetDlgItem(IDC_BUTTON_STOP)->EnableWindow(FALSE);
-    }
+		GetDlgItem(IDC_BUTTON_STOP)->EnableWindow(FALSE);
+
+		m_bVideoPlayRunning = false;
+	}
 }
 
 void CWindowClientDlg::SetResolution(BOOL bResetResolution /* = FALSE */)
 {
-    // Send Video Resolution
+	// Send Video Resolution
 	if (NULL != m_pClientThread)
 	{
 		UINT uiHeight = 0;
@@ -522,22 +542,22 @@ void CWindowClientDlg::SetResolution(BOOL bResetResolution /* = FALSE */)
 			uiHeight = (UINT)_ttoi(StrHeight);
 		}
 
-		int nSendSize						= sizeof(VS_HEADER) + sizeof(VS_SELECT_RESOLUTION_REQ);
-		char* pSendBuf						= new char[_DEC_MAX_BUF_SIZE];
+		int nSendSize = sizeof(VS_HEADER) + sizeof(VS_SELECT_RESOLUTION_REQ);
+		char* pSendBuf = new char[_DEC_MAX_BUF_SIZE];
 		memset(pSendBuf, 0, _DEC_MAX_BUF_SIZE);
 
-		PVS_HEADER pHeader					= (PVS_HEADER)pSendBuf;
+		PVS_HEADER pHeader = (PVS_HEADER)pSendBuf;
 		MAKE_VS_HEADER(pHeader, SVC_SELECT_RESOLUTION, 0, sizeof(VS_SELECT_RESOLUTION_REQ));
 
-		PVS_SELECT_RESOLUTION_REQ pReqData	= (PVS_SELECT_RESOLUTION_REQ)(pSendBuf + sizeof(VS_HEADER));
-        pReqData->uiResetResolution         = (TRUE == bResetResolution) ? 1 : 0;
-		pReqData->uiHeight					= uiHeight;
+		PVS_SELECT_RESOLUTION_REQ pReqData = (PVS_SELECT_RESOLUTION_REQ)(pSendBuf + sizeof(VS_HEADER));
+		pReqData->uiResetResolution = (TRUE == bResetResolution) ? 1 : 0;
+		pReqData->uiHeight = uiHeight;
 
 		for (int nIndex = 0; nIndex < _DEC_VIDEO_HEIGHT_SET_CNT; ++nIndex)
 		{
 			if (g_nVideoHeightSet[nIndex] == pReqData->uiHeight)
 			{
-				pReqData->uiWidth           = g_nVideoWidthSet[nIndex];
+				pReqData->uiWidth = g_nVideoWidthSet[nIndex];
 				break;
 			}
 		}
@@ -547,17 +567,50 @@ void CWindowClientDlg::SetResolution(BOOL bResetResolution /* = FALSE */)
 		// Disable height combo to duplicate selecting resolution 
 		m_ComboHeight.EnableWindow(FALSE);
 
-        if (NULL != m_fpVideoScalingFile)
+		if (NULL != m_fpVideoScalingFile)
 		{
 			fclose(m_fpVideoScalingFile);
 			m_fpVideoScalingFile = NULL;
 		}
+	}
+}
 
-		if (NULL != m_fpAudioResampleFile)
+int CWindowClientDlg::CreateScreenWnd(int nWidth, int nHeight)
+{
+	if (NULL != m_pScreenWnd)
+	{
+		DestroyScreenWnd();
+	}
+
+	m_pScreenWnd = new CScreenWnd(this);
+	if (NULL == m_pScreenWnd)
+	{
+		return -1;
+	}
+
+	m_pScreenWnd->SetScreenSize(nWidth, nHeight);
+
+	if (FALSE == m_pScreenWnd->Create(IDD_SCREEN_WND, this))
+	{
+		return -2;
+	}
+
+	m_pScreenWnd->SetWindowText(_T("Test.mp4"));
+	m_pScreenWnd->ShowWindow(TRUE);
+
+	return 0;
+}
+
+void CWindowClientDlg::DestroyScreenWnd()
+{
+	if (NULL != m_pScreenWnd)
+	{
+		if (NULL != m_pScreenWnd->GetSafeHwnd())
 		{
-			fclose(m_fpAudioResampleFile);
-			m_fpAudioResampleFile = NULL;
+			m_pScreenWnd->DestroyWindow();
 		}
+
+		SAFE_DELETE(m_pScreenWnd);
 	}
 }
 
@@ -683,7 +736,6 @@ void CWindowClientDlg::OnBnClickedButtonPlay()
 
 		m_pClientThread->Send(pSendBuf, nSendSize);
 	}
-	
 }
 
 
@@ -709,6 +761,23 @@ void CWindowClientDlg::OnBnClickedButtonStop()
 
 void CWindowClientDlg::OnCbnSelchangeComboHeight()
 {
-    // TODO: 여기에 컨트롤 알림 처리기 코드를 추가합니다.
-    SetResolution(TRUE);
+	// TODO: Add your control notification handler code here
+	if (true == m_bVideoPlayRunning)
+	{
+		SetResolution(TRUE);
+	}	
+}
+
+
+LRESULT CWindowClientDlg::OnRecvScreenCreateMsg(WPARAM wParam, LPARAM lParam)
+{
+	CreateScreenWnd(m_nScreenWidth, m_nScreenHeight);
+	return 1;
+}
+
+
+LRESULT CWindowClientDlg::OnRecvScreenCloseMsg(WPARAM wParam, LPARAM lParam)
+{
+	OnBnClickedButtonStop();
+	return 1;
 }

@@ -6,6 +6,7 @@
 #include "afxwin.h"
 #include "ClientThread.h"
 #include "CodecManager.h"
+#include "ScreenWnd.h"
 
 typedef OPENED_FILE_INFO VS_RAW_INFO;
 
@@ -46,15 +47,21 @@ private:
 	int 		SetDecoder			(char* pData);
 	int			ProcFrameData		(char* pData);
 	void		SetPlayStatus		(char* pData);
-    void        SetResolution       (BOOL bResetResolution = FALSE);
+	void        SetResolution(BOOL bResetResolution = FALSE);
+
+	int 		CreateScreenWnd		(int nWidth, int nHeight);
+	void		DestroyScreenWnd();
 
 public:
-	virtual BOOL PreTranslateMessage(MSG* pMsg);
-	afx_msg void OnBnClickedButtonConnect();
-	afx_msg void OnBnClickedButtonReqVideoList();
-	afx_msg void OnBnClickedButtonPlay();
-	afx_msg void OnBnClickedButtonStop();
-    afx_msg void OnCbnSelchangeComboHeight();
+	virtual BOOL	PreTranslateMessage(MSG* pMsg);
+	afx_msg void	OnBnClickedButtonConnect();
+	afx_msg void	OnBnClickedButtonReqVideoList();
+	afx_msg void	OnBnClickedButtonPlay();
+	afx_msg void	OnBnClickedButtonStop();
+	afx_msg void	OnCbnSelchangeComboHeight();
+
+	afx_msg LRESULT OnRecvScreenCreateMsg(WPARAM wParam, LPARAM lParam);
+	afx_msg LRESULT OnRecvScreenCloseMsg(WPARAM wParam, LPARAM lParam);
 
 private:
 	CClientThread*	m_pClientThread;
@@ -68,10 +75,14 @@ private:
 	
 	VS_RAW_INFO		m_VsRawInfo;
 
-    BOOL			m_bVideoPlayRunning;
-	BOOL			m_bPause;
-
 	// Test
 	FILE*			m_fpVideoScalingFile;
 	FILE*			m_fpAudioResampleFile;
+
+	BOOL			m_bVideoPlayRunning;
+	BOOL			m_bPause;
+
+	CScreenWnd*		m_pScreenWnd;
+	int				m_nScreenWidth;
+	int				m_nScreenHeight;
 };
