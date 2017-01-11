@@ -61,11 +61,11 @@ bool CSocketThread::InitSocketThread()
         m_bRunSendThread = true;
     }
 
-    m_hRecvThread = (HANDLE)_beginthreadex(NULL, 0, RecvThread, this, 0, NULL);
-    if (NULL != m_hRecvThread)
-    {
-        m_bRunRecvThread = true;
-    }
+    //m_hRecvThread = (HANDLE)_beginthreadex(NULL, 0, RecvThread, this, 0, NULL);
+    //if (NULL != m_hRecvThread)
+    //{
+    //    m_bRunRecvThread = true;
+    //}
 #else
 	pthread_mutex_init(&m_hSendDataQueueMutex, NULL);
 
@@ -216,7 +216,6 @@ void*					CSocketThread::RecvThread(void* lpParam)
 
 	char    RecvProcBuf[_DEC_MAX_BUF_SIZE]		= {0, };
     int     nReadLen                            = 0;
-	int		nCnt								= 0;
 	UINT	uiBufIndex							= 0;
 
 	while (true == pThis->m_bRunRecvThread)
@@ -228,13 +227,13 @@ void*					CSocketThread::RecvThread(void* lpParam)
 #endif
 		if (0 >= nReadLen)
 		{
-			TraceLog("[%d]Read Length = %d", nCnt++, nReadLen);
+			TraceLog("Read Length = %d", nReadLen);
 #ifdef _WINDOWS
 			Sleep(10);
 #else
 			usleep(10000);
 #endif
-			continue;
+            break;
 		}
 
 		UINT uiResult = pThis->GetSocket()->ProcessReceive(RecvProcBuf, nReadLen);
