@@ -38,12 +38,12 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
-    <PlatformToolset>v110</PlatformToolset>
+    <PlatformToolset>v140</PlatformToolset>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
-    <PlatformToolset>v110</PlatformToolset>
+    <PlatformToolset>v140</PlatformToolset>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -102,8 +102,8 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>./;../Common/;../Codec/;../Multiplex/;../FFMPEG/include;./Stream;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>WIN32;_WINDOWS;_DEBUG;_CONSOLE;__STDC_CONSTANT_MACROS;__STDC_FORMAT_MACROS;_WINDOWS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>./;./Stream;./Network/Listen;./Network/Session;../Common/;../Codec/;../Multiplex/;../FFMPEG/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <PrecompiledHeader>Use</PrecompiledHeader>
@@ -161,9 +161,9 @@
     <ClCompile Include="..\Common\ConnectSocket.cpp" />
     <ClCompile Include="..\Common\SocketThread.cpp" />
     <ClCompile Include="..\Multiplex\Demuxer.cpp" />
-    <ClCompile Include="ListenSocket.cpp" />
-    <ClCompile Include="SessionThread.cpp" />
-    <ClCompile Include="SessionSocket.cpp" />
+    <ClCompile Include="Network\Listen\WinListenSocket.cpp" />
+    <ClCompile Include="Network\Session\SessionSocket.cpp" />
+    <ClCompile Include="Network\Session\SessionThread.cpp" />
     <ClCompile Include="StreamServer.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
@@ -185,9 +185,10 @@
     <ClInclude Include="..\Common\ConnectSocket.h" />
     <ClInclude Include="..\Common\SocketThread.h" />
     <ClInclude Include="..\Multiplex\Demuxer.h" />
-    <ClInclude Include="ListenSocket.h" />
-    <ClInclude Include="SessionThread.h" />
-    <ClInclude Include="SessionSocket.h" />
+    <ClInclude Include="Network\Listen\ListenSocket.h" />
+    <ClInclude Include="Network\Listen\WinListenSocket.h" />
+    <ClInclude Include="Network\Session\SessionSocket.h" />
+    <ClInclude Include="Network\Session\SessionThread.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="Stream\StreamSource.h" />
     <ClInclude Include="Stream\StreamThread.h" />
