@@ -20,11 +20,6 @@ bool CSessionThread::InitSocketThread()
 		return false;
 	}
 
-    if (false == CSocketThread::InitSocketThread())
-    {
-        return false;
-    }
-
 	SAFE_DELETE(m_pSessionSocket);
 	m_pSessionSocket = new CSessionSocket();
 	if (NULL == m_pSessionSocket)
@@ -35,5 +30,5 @@ bool CSessionThread::InitSocketThread()
 	m_pSessionSocket->Attach(m_hSocket);
 	m_pSessionSocket->SetSocketThread(this);
 
-    return true;
+    return CSocketThread::InitSocketThread();
 }
