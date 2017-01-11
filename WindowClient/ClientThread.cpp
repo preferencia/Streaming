@@ -35,13 +35,8 @@ void CClientThread::SetProcCallbakcInfo(void* pObject, ProcCallback ProcCallback
 	}
 }
 
-bool CClientThread::InitSocketThread()
+bool CClientThread::InitSocketThread(bool bRunSendThread /* = true */, bool bRunRecvThread /* = true */)
 {
-    if (false == CSocketThread::InitSocketThread())
-    {
-        return false;
-    }
-
 	SAFE_DELETE(m_pClientSocket);
 
 	m_pClientSocket = new CClientSocket();
@@ -62,7 +57,7 @@ bool CClientThread::InitSocketThread()
 
 	m_pClientSocket->SetSocketThread(this);
 
-    return true;
+    return CSocketThread::InitSocketThread(bRunSendThread, bRunRecvThread);
 
 $ERROR:
 	m_bRunSendThread	= false;
