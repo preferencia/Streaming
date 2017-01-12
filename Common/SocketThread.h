@@ -13,7 +13,7 @@ public:
     CSocketThread();
     virtual ~CSocketThread(void);
 
-    virtual bool    InitSocketThread();
+    virtual bool    InitSocketThread(bool bRunSendThread = true, bool bRunRecvThread = true);
 	virtual void	StopSocketThread();
 	virtual void    Send(char* pData, int nDataLen);
 

@@ -13,7 +13,7 @@ public:
 	void					SetServerInfo(char* pszServerIP, int nServerPort);
 	void					SetProcCallbakcInfo(void* pObject, ProcCallback ProcCallbackFunc);
 
-    virtual bool            InitSocketThread();
+    virtual bool            InitSocketThread(bool bRunSendThread = true, bool bRunRecvThread = true);
     virtual CConnectSocket* GetSocket() { return m_pClientSocket; }
 
 private:

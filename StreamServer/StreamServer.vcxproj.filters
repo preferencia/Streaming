@@ -28,6 +28,12 @@
     <Filter Include="Multiplex">
       <UniqueIdentifier>{deaa360f-42b6-49d4-94ed-da472a6cbe0a}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Network\Listen">
+      <UniqueIdentifier>{904b37b7-2491-4e44-9c39-639350c35cdf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Network\Session">
+      <UniqueIdentifier>{eb9d1ddb-5c3e-4972-b95d-22c8853fca4d}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="StreamServer.cpp">
@@ -41,12 +47,6 @@
     </ClCompile>
     <ClCompile Include="..\Common\SocketThread.cpp">
       <Filter>Common</Filter>
-    </ClCompile>
-    <ClCompile Include="ListenSocket.cpp">
-      <Filter>Network</Filter>
-    </ClCompile>
-    <ClCompile Include="SessionSocket.cpp">
-      <Filter>Network</Filter>
     </ClCompile>
     <ClCompile Include="Stream\StreamSource.cpp">
       <Filter>Stream</Filter>
@@ -69,8 +69,14 @@
     <ClCompile Include="..\Multiplex\Demuxer.cpp">
       <Filter>Multiplex</Filter>
     </ClCompile>
-    <ClCompile Include="SessionThread.cpp">
-      <Filter>Network</Filter>
+    <ClCompile Include="Network\Listen\WinListenSocket.cpp">
+      <Filter>Network\Listen</Filter>
+    </ClCompile>
+    <ClCompile Include="Network\Session\SessionSocket.cpp">
+      <Filter>Network\Session</Filter>
+    </ClCompile>
+    <ClCompile Include="Network\Session\SessionThread.cpp">
+      <Filter>Network\Session</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -91,12 +97,6 @@
     </ClInclude>
     <ClInclude Include="..\Common\SocketThread.h">
       <Filter>Common</Filter>
-    </ClInclude>
-    <ClInclude Include="ListenSocket.h">
-      <Filter>Network</Filter>
-    </ClInclude>
-    <ClInclude Include="SessionSocket.h">
-      <Filter>Network</Filter>
     </ClInclude>
     <ClInclude Include="Stream\StreamSource.h">
       <Filter>Stream</Filter>
@@ -122,8 +122,17 @@
     <ClInclude Include="..\Multiplex\Demuxer.h">
       <Filter>Multiplex</Filter>
     </ClInclude>
-    <ClInclude Include="SessionThread.h">
-      <Filter>Network</Filter>
+    <ClInclude Include="Network\Listen\ListenSocket.h">
+      <Filter>Network\Listen</Filter>
+    </ClInclude>
+    <ClInclude Include="Network\Listen\WinListenSocket.h">
+      <Filter>Network\Listen</Filter>
+    </ClInclude>
+    <ClInclude Include="Network\Session\SessionSocket.h">
+      <Filter>Network\Session</Filter>
+    </ClInclude>
+    <ClInclude Include="Network\Session\SessionThread.h">
+      <Filter>Network\Session</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

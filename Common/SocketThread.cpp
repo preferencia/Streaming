@@ -45,7 +45,7 @@ CSocketThread::~CSocketThread(void)
 #endif
 }
 
-bool CSocketThread::InitSocketThread()
+bool CSocketThread::InitSocketThread(bool bRunSendThread /* = true */, bool bRunRecvThread /* = true */)
 {
 	SAFE_DELETE(m_pSendDataQueue);
 
@@ -55,30 +55,41 @@ bool CSocketThread::InitSocketThread()
 #ifdef _WINDOWS
 	m_hSendDataQueueMutex = CreateMutex(NULL, FALSE, NULL);
 
-    m_hSendThread = (HANDLE)_beginthreadex(NULL, 0, SendThread, this, 0, NULL);
-    if (NULL != m_hSendThread)
-    {
-        m_bRunSendThread = true;
-    }
+	if (true == bRunSendThread)
+	{
+		m_hSendThread = (HANDLE)_beginthreadex(NULL, 0, SendThread, this, 0, NULL);
+		if (NULL != m_hSendThread)
+		{
+			m_bRunSendThread = true;
+		}
+	}    
 
-    //m_hRecvThread = (HANDLE)_beginthreadex(NULL, 0, RecvThread, this, 0, NULL);
-    //if (NULL != m_hRecvThread)
-    //{
-    //    m_bRunRecvThread = true;
-    //}
+	if (true == bRunRecvThread)
+	{
+		m_hRecvThread = (HANDLE)_beginthreadex(NULL, 0, RecvThread, this, 0, NULL);
+		if (NULL != m_hRecvThread)
+		{
+			m_bRunRecvThread = true;
+		}
+	}
 #else
 	pthread_mutex_init(&m_hSendDataQueueMutex, NULL);
 
-	int nRet = pthread_create(&m_hSendThread, NULL, SendThread, this);
-	if (0 == nRet)
+	if (true == bRunSendThread)
 	{
-		m_bRunSendThread = true;
+		if (0 == pthread_create(&m_hSendThread, NULL, SendThread, this))
+		{
+			m_bRunSendThread = true;
+		}
 	}
+	
 
-	nRet = pthread_create(&m_hRecvThread, NULL, RecvThread, this);
-	if (0 == nRet)
+	if (true == bRunRecvThread)
 	{
-		m_bRunRecvThread = true;
+		if (0 == pthread_create(&m_hRecvThread, NULL, RecvThread, this))
+		{
+			m_bRunRecvThread = true;
+		}
 	}
 
 	pthread_detach(m_hSendThread);
