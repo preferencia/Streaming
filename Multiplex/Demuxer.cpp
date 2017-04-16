@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "Demuxer.h"
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 #pragma warning(disable:4996)
 #endif
 
@@ -16,96 +16,112 @@ typedef struct sample_fmt_entry
 
 CDemuxer::CDemuxer()
 {
-	m_pszSrcFileName	= NULL;
+
 }
 
 
 CDemuxer::~CDemuxer()
 {
-	m_pszSrcFileName = NULL;
+	m_pszFileName    = NULL;
 }
 
 
-int CDemuxer::SrcFileOpenProc(char* pszSrcFileName, AVFormatContext** ppFmtCtx)
+int CDemuxer::FileOpenProc(char* pszFileName, AVFormatContext** ppFmtCtx)
 {
-	if ((NULL == pszSrcFileName) || (0 >= strlen(pszSrcFileName)))
+	if ((NULL == pszFileName) || (0 >= strlen(pszFileName)))
 	{
 		return -1;
 	}
 
-	m_pszSrcFileName = pszSrcFileName;
+	m_pszFileName = pszFileName;
+
+	int nRet = 0;
 
 	/* open input file, and allocate format context */
-	if (0 > avformat_open_input(ppFmtCtx, m_pszSrcFileName, NULL, NULL))
+	nRet = avformat_open_input(ppFmtCtx, m_pszFileName, NULL, NULL);
+	if (0 > nRet)
 	{
-		TraceLog("Could not open source file %s", m_pszSrcFileName);
+        TraceLog("Could not open source file [result = %d]", nRet);
 		return -2;
 	}
 
 	/* retrieve stream information */
-	if (0 > avformat_find_stream_info(*ppFmtCtx, NULL))
+	nRet = avformat_find_stream_info(*ppFmtCtx, NULL);
+	if (0 > nRet)
 	{
 		TraceLog("Could not find stream information");
 		return -3;
 	}
 
-	return 0;
+	return nRet;
 }
 
-int CDemuxer::OpenCodecContext(int* pStreamIndex, AVCodecContext** ppDecCtx, AVFormatContext* pFmtCtx, enum AVMediaType Type)
+int CDemuxer::OpenCodecContext(int* pStreamIndex, AVCodecContext** ppCodecCtx, 
+							   AVFormatContext* pInFmtCtx, AVFormatContext* pOutFmtCtx, enum AVMediaType Type)
 {
+	if ((NULL == ppCodecCtx) || (NULL != *ppCodecCtx))
+	{
+		return -1;
+	}
+
+	if (NULL == pInFmtCtx)
+	{
+		return -2;
+	}
+
 	int nRet			= -1; 
 	int nStreamIndex	= -1;
 	AVStream* pSt		= NULL;
 	AVCodec* pDec		= NULL;
 	AVDictionary* pOpts = NULL;
 
-	nRet = av_find_best_stream(pFmtCtx, Type, -1, -1, NULL, 0);
+	nRet = av_find_best_stream(pInFmtCtx, Type, -1, -1, NULL, 0);
 	if (0 > nRet)
 	{
-		TraceLog("Could not find %s stream in input file '%s'",
-			av_get_media_type_string(Type), m_pszSrcFileName);
+		TraceLog("Could not find %s stream in input file '%s'", av_get_media_type_string(Type), m_pszFileName);
 		return nRet;
 	}
 	else
 	{
 		nStreamIndex = nRet;
-		pSt = pFmtCtx->streams[nStreamIndex];
+		pSt = pInFmtCtx->streams[nStreamIndex];
 
 		/* find decoder for the stream */
 		pDec = avcodec_find_decoder(pSt->codecpar->codec_id);
 		if (!pDec)
 		{
-			TraceLog("Failed to find %s codec",
-				av_get_media_type_string(Type));
+			TraceLog("Failed to find %s codec", av_get_media_type_string(Type));
 			return AVERROR(EINVAL);
 		}
 
 		/* Allocate a codec context for the decoder */
-		*ppDecCtx = avcodec_alloc_context3(pDec);
-		if (!*ppDecCtx)
+		*ppCodecCtx = avcodec_alloc_context3(pDec);
+		if (!*ppCodecCtx)
 		{
-			TraceLog("Failed to allocate the %s codec context",
-				av_get_media_type_string(Type));
+			TraceLog("Failed to allocate the %s codec context", av_get_media_type_string(Type));
 			return AVERROR(ENOMEM);
 		}
 
 		/* Copy codec parameters from input stream to output codec context */
-		if (0 > (nRet = avcodec_parameters_to_context(*ppDecCtx, pSt->codecpar)))
+		nRet = avcodec_parameters_to_context(*ppCodecCtx, pSt->codecpar);
+		if (0 > nRet)
 		{
-			TraceLog("Failed to copy %s codec parameters to decoder context",
-				av_get_media_type_string(Type));
+			TraceLog("Failed to copy %s codec parameters to decoder context", av_get_media_type_string(Type));
 			return nRet;
 		}
 
+		TraceLog("CDemuxer::OpenCodecContext - Media Type[%d] - avcodec_parameters_to_context result = %d", Type, nRet);
+
 		/* Init the decoders, with or without reference counting */
 		av_dict_set(&pOpts, "refcounted_frames", "1", 0);
-		if (0 > (nRet = avcodec_open2(*ppDecCtx, pDec, &pOpts)))
+		nRet = avcodec_open2(*ppCodecCtx, pDec, &pOpts);
+		if (0 > nRet)
 		{
-			TraceLog("Failed to open %s codec",
-				av_get_media_type_string(Type));
+			TraceLog("Failed to open %s codec", av_get_media_type_string(Type));
 			return nRet;
 		}
+
+		TraceLog("CDemuxer::OpenCodecContext - Media Type[%d] - avcodec_open2 result = %d", Type, nRet);
 
 		*pStreamIndex = nStreamIndex;
 	}
