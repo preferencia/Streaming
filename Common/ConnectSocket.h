@@ -1,22 +1,21 @@
 #pragma once
 
-#include "Common_Protocol.h"
-
 class CConnectSocket
 {
 public:
     CConnectSocket(void);
     virtual ~CConnectSocket(void);
 
-	SOCKET				GetConSocket()			{	return m_hConnectSocket;	}
-	void				Attach(SOCKET hSocket)	{	m_hConnectSocket = hSocket;	}
+	SOCKET				GetSocket()				{	return m_hSocket;		}
+	void				Attach(SOCKET hSocket)	{	m_hSocket = hSocket;	}
 
 	void				SetSocketThread(void* pSocketThread)	{	m_pSocketThread = pSocketThread;	}
 
-	virtual bool		Send(char* pData, int nDataLen);
-	virtual UINT		ProcessReceive(char* lpBuf, int nDataLen)	= 0;	// define in subclasses
+	virtual UINT		Send(char* pData, int nDataLen);
+	virtual UINT		ProcessReceive(char* lpBuf, UINT uiDataLen);
+    virtual int		    ProcSvcData(int nSvcCode, int nSvcDataLen, char* lpBuf) = 0;
 
 protected:
 	void*				m_pSocketThread;
-	SOCKET				m_hConnectSocket;
+	SOCKET				m_hSocket;
 };

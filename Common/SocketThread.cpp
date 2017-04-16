@@ -1,95 +1,73 @@
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "SocketThread.h"
 
 typedef struct _SendData
 {
-    int nDataLen;
-    char* pData;
+    SOCKET  hSocket;
+    int     nDataLen;
+    char*   pData;
 } SendData;
-
 
 CSocketThread::CSocketThread()
 {
-	m_hSendThread			= NULL;
+	m_nSessionThreadNum		= 0;
+#ifdef _WIN32
+	m_hComPort				= NULL;
+
+    m_hSendThread			= NULL;
 	m_hRecvThread			= NULL;
+	m_hSendDataQueueMutex	= NULL;
+#else
+    m_pEpollEvents          = NULL;
+    m_nEpollFd              = 0;
+#endif
 
 	m_bRunSendThread		= false;
 	m_bRunRecvThread		= false;
 
-    m_pSendDataQueue		= NULL;
+    m_SendDataQueue.clear();
 }
 
 CSocketThread::~CSocketThread(void)
 {
-    if (0 < m_pSendDataQueue->size())
-    {
-        for (m_SendDataQueueIt = m_pSendDataQueue->begin(); m_SendDataQueueIt != m_pSendDataQueue->end(); ++m_SendDataQueueIt)
-        {
-            SendData* pSendData = (SendData*)*m_SendDataQueueIt;
-            if (NULL != pSendData)
-            {
-                SAFE_DELETE_ARRAY(pSendData->pData);
-                SAFE_DELETE(pSendData);
-            }
-        }
-        m_pSendDataQueue->clear();
-    }
-
-    SAFE_DELETE(m_pSendDataQueue);
-
-#ifdef _WINDOWS
-    CloseHandle(m_hSendDataQueueMutex);
-	m_hSendDataQueueMutex = NULL;
-#else
-	pthread_mutex_destroy(&m_hSendDataQueueMutex);
-#endif
+	if (0 < m_ConnectSocketMap.size())
+	{
+		for (m_ConnectSocketMapIt = m_ConnectSocketMap.begin(); m_ConnectSocketMapIt != m_ConnectSocketMap.end(); ++m_ConnectSocketMapIt)
+		{
+			CConnectSocket* pConnectSocket = m_ConnectSocketMapIt->second;
+			SAFE_DELETE(pConnectSocket);
+			m_ConnectSocketMapIt = m_ConnectSocketMap.erase(m_ConnectSocketMapIt);
+		}
+	}
 }
 
-bool CSocketThread::InitSocketThread(bool bRunSendThread /* = true */, bool bRunRecvThread /* = true */)
+bool CSocketThread::InitSocketThread()
 {
-	SAFE_DELETE(m_pSendDataQueue);
-
-    m_pSendDataQueue	= new SendDataQueue;
-    m_pSendDataQueue->clear();
-
-#ifdef _WINDOWS
+#ifdef _WIN32
 	m_hSendDataQueueMutex = CreateMutex(NULL, FALSE, NULL);
 
-	if (true == bRunSendThread)
+	m_hSendThread = (HANDLE)_beginthreadex(NULL, 0, SendThread, this, 0, NULL);
+	if (NULL != m_hSendThread)
 	{
-		m_hSendThread = (HANDLE)_beginthreadex(NULL, 0, SendThread, this, 0, NULL);
-		if (NULL != m_hSendThread)
-		{
-			m_bRunSendThread = true;
-		}
-	}    
+		m_bRunSendThread = true;
+	}
 
-	if (true == bRunRecvThread)
+	m_hRecvThread = (HANDLE)_beginthreadex(NULL, 0, RecvThread, this, 0, NULL);
+	if (NULL != m_hRecvThread)
 	{
-		m_hRecvThread = (HANDLE)_beginthreadex(NULL, 0, RecvThread, this, 0, NULL);
-		if (NULL != m_hRecvThread)
-		{
-			m_bRunRecvThread = true;
-		}
+		m_bRunRecvThread = true;
 	}
 #else
 	pthread_mutex_init(&m_hSendDataQueueMutex, NULL);
 
-	if (true == bRunSendThread)
+	if (0 == pthread_create(&m_hSendThread, NULL, SendThread, this))
 	{
-		if (0 == pthread_create(&m_hSendThread, NULL, SendThread, this))
-		{
-			m_bRunSendThread = true;
-		}
+		m_bRunSendThread = true;
 	}
-	
 
-	if (true == bRunRecvThread)
+	if (0 == pthread_create(&m_hRecvThread, NULL, RecvThread, this))
 	{
-		if (0 == pthread_create(&m_hRecvThread, NULL, RecvThread, this))
-		{
-			m_bRunRecvThread = true;
-		}
+		m_bRunRecvThread = true;
 	}
 
 	pthread_detach(m_hSendThread);
@@ -101,195 +79,463 @@ bool CSocketThread::InitSocketThread(bool bRunSendThread /* = true */, bool bRun
 
 void CSocketThread::StopSocketThread()
 {
-#ifdef _WINDOWS
+	// escape blocking mode
+	if (0 < m_ConnectSocketMap.size())
+	{
+		for (m_ConnectSocketMapIt = m_ConnectSocketMap.begin(); m_ConnectSocketMapIt != m_ConnectSocketMap.end(); ++m_ConnectSocketMapIt)
+		{
+            CConnectSocket* pConnectSocket = m_ConnectSocketMapIt->second;
+			if (NULL != pConnectSocket)
+			{
+#ifdef _WIN32
+				SOCKET hSock = pConnectSocket->GetSocket();
+				closesocket(pConnectSocket->GetSocket());
+#else
+				close(pConnectSocket->GetSocket());
+#endif				
+			}
+        }
+	}
+
+	m_bRunSendThread = false;
+	m_bRunRecvThread = false;
+
+#ifdef _WIN32
 	if (NULL != m_hSendThread)
     {
-        m_bRunSendThread = false;
 		WaitForSingleObject(m_hSendThread, INFINITE);
     }
 
 	if (NULL != m_hRecvThread)
-    {
-		// escape blocking mode
-		closesocket(GetSocket()->GetConSocket());
-
-        m_bRunRecvThread = false;
-
+    {        
 		WaitForSingleObject(m_hRecvThread, INFINITE);
     }
+#endif
+
+    if (0 < m_SendDataQueue.size())
+	{
+		for (m_SendDataQueueIt = m_SendDataQueue.begin(); m_SendDataQueueIt != m_SendDataQueue.end(); ++m_SendDataQueueIt)
+		{
+			SendData* pSendData = (SendData*)*m_SendDataQueueIt;
+			if (NULL != pSendData)
+			{
+				SAFE_DELETE_ARRAY(pSendData->pData);
+				SAFE_DELETE(pSendData);
+				m_SendDataQueueIt = m_SendDataQueue.erase(m_SendDataQueueIt);
+			}
+		}
+	}
+
+#ifdef _WIN32
+    CloseHandle(m_hSendDataQueueMutex);
+	m_hSendDataQueueMutex = NULL;
 #else
-	close(GetSocket()->GetConSocket());
+	pthread_mutex_destroy(&m_hSendDataQueueMutex);
 #endif
 }
 
-void CSocketThread::Send(char* pData, int nDataLen)
+void CSocketThread::Send(SOCKET hSocket, int nDataLen, char* pData)
 {
-    if ((NULL == pData) || (0 >= nDataLen))
+    if ((INVALID_SOCKET == hSocket) || (0 >= nDataLen) || (NULL == pData))
     {
         return;
     }
 
     SendData* pSendData = new SendData;
+    pSendData->hSocket  = hSocket;
     pSendData->nDataLen = nDataLen;
     pSendData->pData    = pData;
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 	WaitForSingleObject(m_hSendDataQueueMutex, INFINITE);
 #else
 	pthread_mutex_lock(&m_hSendDataQueueMutex);
 #endif
 
-    m_pSendDataQueue->push_back((void*)pSendData);
+    m_SendDataQueue.push_back((void*)pSendData);
 
-#ifdef _WINDOWS
+#ifdef _WIN32
     ReleaseMutex(m_hSendDataQueueMutex);
 #else
 	pthread_mutex_unlock(&m_hSendDataQueueMutex);
 #endif
 }
 
-#ifdef _WINDOWS
-unsigned int __stdcall	CSocketThread::SendThread(void* lpParam)
-#else
-void*					CSocketThread::SendThread(void* lpParam)
-#endif
+#ifdef _WIN32
+unsigned int __stdcall CSocketThread::SendThread(void* lpParam)
 {
-    CSocketThread* pThis    = (CSocketThread*)lpParam;
-    if (NULL == pThis)
-    {
-#ifdef _WINDOWS
-        return -1;
-#else
-		return NULL;
-#endif
-    }
+	CSocketThread* pThis = (CSocketThread*)lpParam;
+	if (NULL == pThis)
+	{
+		return -1;
+	}
 
-    while (true == pThis->m_bRunSendThread)
-    {
-        if (0 == pThis->m_pSendDataQueue->size())
-        {
-#ifdef _WINDOWS
-            Sleep(1);
-#else
-			usleep(1000);
-#endif
-            continue;
-        }
+	SOCKET				hSessionSocket = INVALID_SOCKET;
+	DWORD               dwTransBytes = 0;
+	DWORD				dwFlags = 0;
+	POVERLAPPED_IO_DATA pOvlpInfo = NULL;
+	SendData*           pSendData = NULL;
 
-#ifdef _WINDOWS
+	while (true == pThis->m_bRunSendThread)
+	{
+		if (0 >= pThis->m_SendDataQueue.size())
+		{
+			Sleep(10);
+			continue;
+		}
+
+		pOvlpInfo = new OVERLAPPED_IO_DATA;
+		if (NULL == pOvlpInfo)
+		{
+			continue;
+		}
+
+		memset(pOvlpInfo, 0, sizeof(OVERLAPPED_IO_DATA));
+		pOvlpInfo->nRWMode = _DEC_MODE_WRITE;
+
 		WaitForSingleObject(pThis->m_hSendDataQueueMutex, INFINITE);
-#else
-		pthread_mutex_lock(&pThis->m_hSendDataQueueMutex);
-#endif
 
-        SendData* pSendData = (SendData*)pThis->m_pSendDataQueue->front();
-        if ((NULL != pSendData) && (NULL != pSendData->pData) && (0 < pSendData->nDataLen))
-        {
-            pThis->GetSocket()->Send(pSendData->pData, pSendData->nDataLen);
+		pSendData = (SendData*)pThis->m_SendDataQueue.front();
+		if ((NULL != pSendData) && (INVALID_SOCKET != pSendData->hSocket) && (0 < pSendData->nDataLen) && (NULL != pSendData->pData))
+		{
+			hSessionSocket			= pSendData->hSocket;
+			pOvlpInfo->wsaBuf.len	= pSendData->nDataLen;
+            pOvlpInfo->wsaBuf.buf	= new char[pOvlpInfo->wsaBuf.len];
+            memcpy(pOvlpInfo->wsaBuf.buf, pSendData->pData, pOvlpInfo->wsaBuf.len);
 
-            SAFE_DELETE_ARRAY(pSendData->pData);
-            SAFE_DELETE(pSendData);
-        } 
-        pThis->m_pSendDataQueue->pop_front();
+            TraceLog("CSocketThread::SendThread - OvlpInfo = 0x%08x", pOvlpInfo);
 
-#ifdef _WINDOWS
-        ReleaseMutex(pThis->m_hSendDataQueueMutex);
-#else
-		pthread_mutex_unlock(&pThis->m_hSendDataQueueMutex);
-#endif
-    }
+			WSASend(hSessionSocket, &pOvlpInfo->wsaBuf, 1, &dwTransBytes, 0, &pOvlpInfo->Ovlp, NULL);
 
-#ifdef _WINDOWS
-    CloseHandle(pThis->m_hSendThread);
-    pThis->m_hSendThread = NULL;
+            TraceLog("CSocketThread::SendThread - Send Bytes = %d", dwTransBytes);
 
-    return 1;
-#else
-	return NULL;
-#endif 
+			SAFE_DELETE_ARRAY(pSendData->pData);
+			SAFE_DELETE(pSendData);
+
+            TraceLog("CSocketThread::SendThread - Remove Send Data");
+		}
+		pThis->m_SendDataQueue.pop_front();
+
+		ReleaseMutex(pThis->m_hSendDataQueueMutex);
+	}
+
+	CloseHandle(pThis->m_hSendThread);
+	pThis->m_hSendThread = NULL;
+
+	return 0;
 }
 
-#ifdef _WINDOWS
-unsigned int __stdcall	CSocketThread::RecvThread(void* lpParam)
-#else
-void*					CSocketThread::RecvThread(void* lpParam)
-#endif
+unsigned int __stdcall CSocketThread::RecvThread(void* lpParam)
 {
-	CSocketThread* pThis    = (CSocketThread*)lpParam;
-    if (NULL == pThis)
-    {
-#ifdef _WINDOWS
-        return -1;
-#else
-		return NULL;
-#endif
-    }
+	CSocketThread* pThis = (CSocketThread*)lpParam;
+	if (NULL == pThis)
+	{
+		return -1;
+	}
 
-	char    RecvProcBuf[_DEC_MAX_BUF_SIZE]		= {0, };
-    int     nReadLen                            = 0;
-	UINT	uiBufIndex							= 0;
+	char*               pRecvProcBuf		= NULL;
+	UINT                uiReadLen			= 0;
+	UINT	            uiBufIndex			= 0;
+	UINT                uiProcRecvResult	= 0;
+	UINT				uiBufSize			= _DEC_MAX_BUF_SIZE;
+
+	DWORD               dwTransBytes		= 0;
+	DWORD				dwFlags				= 0;
+	PSOCKET_INFO_DATA   pSocketInfo			= NULL;
+	POVERLAPPED_IO_DATA pOvlpInfo			= NULL;
+	CConnectSocket*     pConnectSocket		= NULL;
 
 	while (true == pThis->m_bRunRecvThread)
 	{
-#ifdef _WINDOWS
-		nReadLen = recv(pThis->GetSocket()->GetConSocket(), RecvProcBuf, _DEC_MAX_BUF_SIZE, 0);
-#else
-		nReadLen = read(pThis->GetSocket()->GetConSocket(), RecvProcBuf, _DEC_MAX_BUF_SIZE);
-#endif
-		if (0 >= nReadLen)
+		if (0 >= pThis->m_ConnectSocketMap.size())
 		{
-			TraceLog("Read Length = %d", nReadLen);
-#ifdef _WINDOWS
 			Sleep(10);
-#else
-			usleep(10000);
-#endif
-            break;
+			continue;
 		}
 
-		UINT uiResult = pThis->GetSocket()->ProcessReceive(RecvProcBuf, nReadLen);
-		if (0 < uiResult)
+        GetQueuedCompletionStatus(pThis->m_hComPort, &dwTransBytes, (PULONG_PTR)&pSocketInfo, (LPOVERLAPPED*)&pOvlpInfo, INFINITE);
+
+		if (NULL == pOvlpInfo)
 		{
-			UINT	uiRemainLen		= uiResult;
-			char*	pNewRecvProcBuf	= new char[_DEC_MAX_BUF_SIZE + uiResult];
-			memset(pNewRecvProcBuf, 0,              _DEC_MAX_BUF_SIZE + uiResult);
-			memcpy(pNewRecvProcBuf, RecvProcBuf,    _DEC_MAX_BUF_SIZE);
-			uiBufIndex += _DEC_MAX_BUF_SIZE;
-        
-			nReadLen	= 0;
-			while (0 < uiRemainLen)
+			continue;
+		}
+
+		if (_DEC_MODE_READ == pOvlpInfo->nRWMode)
+		{
+            TraceLog("CSocketThread::RecvThread - READ : OvlpInfo = 0x%08x", pOvlpInfo);
+			if (0 == dwTransBytes)  // EOF Àü¼Û ½Ã
 			{
-#ifdef _WINDOWS
-				nReadLen = recv(pThis->GetSocket()->GetConSocket(), pNewRecvProcBuf + uiBufIndex, uiRemainLen, 0);
-#else
-				nReadLen = read(pThis->GetSocket()->GetConSocket(), pNewRecvProcBuf + uiBufIndex, uiRemainLen);
-#endif
+				TraceLog("CSocketThread::RecvThread - Disconnect %d session.", pSocketInfo->hSessionSocket);
+				closesocket(pSocketInfo->hSessionSocket);
 
-				TraceLog("Extra Read Length = %d", nReadLen);
-				if (0 >= nReadLen)
+				// Remove session socket map
+				pThis->m_ConnectSocketMapIt = pThis->m_ConnectSocketMap.find(pSocketInfo->hSessionSocket);
+				if (pThis->m_ConnectSocketMapIt != pThis->m_ConnectSocketMap.end())
 				{
-					continue;
-				}				
+					pConnectSocket = pThis->m_ConnectSocketMapIt->second;
+					SAFE_DELETE(pConnectSocket);
+					pThis->m_ConnectSocketMap.erase(pThis->m_ConnectSocketMapIt);
+				}
 
-				uiRemainLen -= nReadLen;
-				uiBufIndex	+= nReadLen;
+				SAFE_DELETE_ARRAY(pOvlpInfo->wsaBuf.buf);
+                SAFE_DELETE_ARRAY(pOvlpInfo->wsaSavedBuf.buf);
+				SAFE_DELETE(pOvlpInfo);
+				SAFE_DELETE(pSocketInfo);
 
-				TraceLog("Cur Buffer Index = %d, Remain Data = %d", uiBufIndex, uiRemainLen);
+				continue;
 			}
 
-	        uiResult = pThis->GetSocket()->ProcessReceive(pNewRecvProcBuf, uiBufIndex);
-		    SAFE_DELETE_ARRAY(pNewRecvProcBuf);
-		}
+			if (NULL == pThis->GetConSocket(pSocketInfo->hSessionSocket))
+			{
+				continue;
+			}
 
-		uiBufIndex = 0;
+			TraceLog("CSocketThread::RecvThread - Recv Bytes = %ld", dwTransBytes);
+
+            // If exist saved data
+            if ((NULL != pOvlpInfo->wsaSavedBuf.buf) && (0 < pOvlpInfo->wsaSavedBuf.len))
+            {
+                pRecvProcBuf            = new char[pOvlpInfo->wsaSavedBuf.len + dwTransBytes];
+                memcpy(pRecvProcBuf, pOvlpInfo->wsaSavedBuf.buf, pOvlpInfo->wsaSavedBuf.len);
+                uiBufIndex              += pOvlpInfo->wsaSavedBuf.len;
+                memcpy(pRecvProcBuf + uiBufIndex, pOvlpInfo->wsaBuf.buf, dwTransBytes);
+
+                SAFE_DELETE_ARRAY(pOvlpInfo->wsaBuf.buf);
+                
+                pOvlpInfo->wsaBuf.len   = pOvlpInfo->wsaSavedBuf.len + dwTransBytes;
+                pOvlpInfo->wsaBuf.buf   = pRecvProcBuf;
+                dwTransBytes            = pOvlpInfo->wsaBuf.len;
+                pRecvProcBuf            = NULL;
+
+                TraceLog("CSocketThread::RecvThread - Total Recv Byte = %ld", dwTransBytes);
+            }
+
+			uiProcRecvResult = pThis->GetConSocket(pSocketInfo->hSessionSocket)->ProcessReceive(pOvlpInfo->wsaBuf.buf, dwTransBytes);
+			if (0 < uiProcRecvResult)    // Incomplete data recieve
+			{
+                // Recieved data copy
+				uiBufSize       = uiProcRecvResult;
+				pRecvProcBuf    = new char[dwTransBytes];
+				memset(pRecvProcBuf, 0, dwTransBytes);
+				memcpy(pRecvProcBuf, pOvlpInfo->wsaBuf.buf, dwTransBytes);
+			}
+			else
+			{
+				uiBufSize       = _DEC_MAX_BUF_SIZE;
+			}
+
+			SAFE_DELETE_ARRAY(pOvlpInfo->wsaBuf.buf);
+            SAFE_DELETE_ARRAY(pOvlpInfo->wsaSavedBuf.buf);
+			SAFE_DELETE(pOvlpInfo);
+
+			if (INVALID_SOCKET != pSocketInfo->hSessionSocket)
+			{
+				pOvlpInfo = new OVERLAPPED_IO_DATA;
+				if (NULL == pOvlpInfo)
+				{
+					continue;
+				}
+
+                TraceLog("CSocketThread::RecvThread - READ : new OvlpInfo = 0x%08x", pOvlpInfo);
+
+				memset(pOvlpInfo, 0, sizeof(OVERLAPPED_IO_DATA));
+				pOvlpInfo->nRWMode = _DEC_MODE_READ;
+				pOvlpInfo->wsaBuf.len = uiBufSize;
+				pOvlpInfo->wsaBuf.buf = new char[pOvlpInfo->wsaBuf.len];
+				memset(pOvlpInfo->wsaBuf.buf, 0, pOvlpInfo->wsaBuf.len);
+				if (NULL != pRecvProcBuf)   // Save recieved data
+				{
+                    pOvlpInfo->wsaSavedBuf.buf = new char[dwTransBytes];
+					memcpy(pOvlpInfo->wsaSavedBuf.buf, pRecvProcBuf, dwTransBytes);
+                    pOvlpInfo->wsaSavedBuf.len = dwTransBytes;
+					SAFE_DELETE(pRecvProcBuf);
+				}
+
+				WSARecv(pSocketInfo->hSessionSocket, &pOvlpInfo->wsaBuf, 1, &dwTransBytes, &dwFlags, &pOvlpInfo->Ovlp, NULL);
+			}
+
+            pOvlpInfo   = NULL;
+			uiBufIndex  = 0;
+		}
+		else
+		{
+            TraceLog("CSocketThread::RecvThread - WRITE : wrtie bytes = %ld, OvlpInfo = 0x%08x", dwTransBytes, pOvlpInfo);
+            if (dwTransBytes < pOvlpInfo->wsaBuf.len)
+            {                
+                pOvlpInfo->wsaBuf.len -= dwTransBytes;
+                pOvlpInfo->wsaBuf.buf += dwTransBytes;
+
+                TraceLog("CSocketThread::RecvThread - Reamined Bytes = %ld", pOvlpInfo->wsaBuf.len);
+
+                while (0 < pOvlpInfo->wsaBuf.len)
+                {                    
+                    WSASend(pSocketInfo->hSessionSocket, &pOvlpInfo->wsaBuf, 1, &dwTransBytes, 0, &pOvlpInfo->Ovlp, NULL);
+
+                    TraceLog("CSocketThread::RecvThread - Send Remained Bytes = %d", dwTransBytes);
+
+                    pOvlpInfo->wsaBuf.len -= dwTransBytes;
+                    pOvlpInfo->wsaBuf.buf += dwTransBytes;
+                }
+            }
+
+            // SendThread's OVERLAPPED_IO_DATA structure delete
+            SAFE_DELETE_ARRAY(pOvlpInfo->wsaBuf.buf);
+		    SAFE_DELETE(pOvlpInfo);
+
+            TraceLog("CSocketThread::RecvThread - WRITE : Remove OvlpInfo");
+		}
+	}
+    
+	CloseHandle(pThis->m_hRecvThread);
+	pThis->m_hRecvThread = NULL;
+
+	return 0;
+}
+#else
+void*	CSocketThread::SendThread(void* lpParam)
+{
+	CSocketThread* pThis = (CSocketThread*)lpParam;
+	if (NULL == pThis)
+	{
+		return NULL;
 	}
 
-#ifdef _WINDOWS
-    CloseHandle(pThis->m_hRecvThread);
-    pThis->m_hRecvThread = NULL;
+	SendData*           pSendData = NULL;
 
-    return 1;
-#else
+	while (true == pThis->m_bRunSendThread)
+	{
+		if (0 >= pThis->m_SendDataQueue.size())
+		{
+			usleep(10000);
+			continue;
+		}
+
+		pthread_mutex_lock(&pThis->m_hSendDataQueueMutex);
+
+		pSendData = (SendData*)pThis->m_SendDataQueue.front();
+		if ( (NULL != pSendData) 
+			&& (INVALID_SOCKET != pSendData->hSocket) 
+			&& (NULL != pSendData->pData) 
+			&& (0 < pSendData->nDataLen) )
+		{
+			int nSendBytes = pThis->GetConSocket(pSendData->hSocket)->Send(pSendData->pData, pSendData->nDataLen);
+			TraceLog("CSocketThread::SendThread - Send Bytes = %d", nSendBytes);
+			
+			SAFE_DELETE_ARRAY(pSendData->pData);
+			SAFE_DELETE(pSendData);
+		} 
+		pThis->m_SendDataQueue.pop_front();
+
+		pthread_mutex_unlock(&pThis->m_hSendDataQueueMutex);
+	}
+
 	return NULL;
-#endif
 }
+
+void*	CSocketThread::RecvThread(void* lpParam)
+{
+	CSocketThread* pThis = (CSocketThread*)lpParam;
+	if (NULL == pThis)
+	{
+		return NULL;
+	}
+
+	char*               pRecvProcBuf		= NULL;
+	char*				pExpProcBuf			= NULL;
+	UINT                uiReadLen			= 0;
+	UINT	            uiBufIndex			= 0;
+	UINT                uiProcRecvResult	= 0;
+	UINT				uiBufSize			= _DEC_MAX_BUF_SIZE;
+
+	SOCKET				hSessionSocket		= INVALID_SOCKET;
+	int					nEpollEventCnt		= 0;
+
+	pRecvProcBuf = new char[uiBufSize];
+	memset(pRecvProcBuf, 0, uiBufSize);
+
+	while (true == pThis->m_bRunRecvThread)
+	{
+		if (NULL == pThis->m_pEpollEvents)
+		{
+			usleep(10000);
+			continue;
+		}
+
+		nEpollEventCnt	= epoll_wait(pThis->m_nEpollFd, pThis->m_pEpollEvents, _DEC_EPOLL_SIZE, -1);
+		if (-1 == nEpollEventCnt)
+		{
+			TraceLog("epoll_wait() error!");
+			break;
+		}
+
+		for (int nIndex = 0; nIndex < nEpollEventCnt; ++nIndex)
+		{
+			hSessionSocket = pThis->m_pEpollEvents[nIndex].data.fd;
+			if (INVALID_SOCKET == hSessionSocket)
+			{
+				continue;
+			}
+
+			uiReadLen = read(hSessionSocket, pRecvProcBuf, uiBufSize);
+
+			if (0 == uiReadLen)	// close request
+			{
+                TraceLog("Disconnect %d session.", hSessionSocket);
+				epoll_ctl(pThis->m_nEpollFd, EPOLL_CTL_DEL, hSessionSocket, NULL);
+
+				// Remove session socket map
+				pThis->m_ConnectSocketMapIt = pThis->m_ConnectSocketMap.find(hSessionSocket);
+				if (pThis->m_ConnectSocketMapIt != pThis->m_ConnectSocketMap.end())
+				{
+					CConnectSocket* pConnectSocket = pThis->m_ConnectSocketMapIt->second;
+					SAFE_DELETE(pConnectSocket);
+					pThis->m_ConnectSocketMap.erase(pThis->m_ConnectSocketMapIt);
+				}
+
+				close(hSessionSocket);
+			}
+			else
+			{
+				uiProcRecvResult = pThis->GetConSocket(hSessionSocket)->ProcessReceive(pRecvProcBuf, uiReadLen);
+				if (0 < uiProcRecvResult)    // Incomplete data recieve
+				{
+					// Recieved data copy
+					uiBufSize		= uiReadLen + uiProcRecvResult;
+					pExpProcBuf		= new char[uiBufSize];
+					memset(pExpProcBuf, 0, uiBufSize);
+					memcpy(pExpProcBuf, pRecvProcBuf, uiReadLen);
+					uiBufIndex		+= uiReadLen;
+
+					while (0 < uiProcRecvResult)
+					{
+						uiReadLen = read(hSessionSocket, pExpProcBuf + uiBufIndex, uiProcRecvResult);
+
+						if (0 > uiReadLen)
+						{
+							if (EAGAIN == errno)
+							{
+								break;
+							}								
+						}
+
+						uiBufIndex			+= uiReadLen;
+						uiProcRecvResult	-= uiReadLen;
+					}
+
+					pThis->GetConSocket(hSessionSocket)->ProcessReceive(pExpProcBuf, uiBufSize);
+
+					SAFE_DELETE(pExpProcBuf);
+				}
+
+				uiBufSize = _DEC_MAX_BUF_SIZE;
+				memset(pRecvProcBuf, 0, uiBufSize);
+			}
+		}
+	}
+
+	SAFE_DELETE(pRecvProcBuf);
+	SAFE_DELETE(pExpProcBuf);
+
+	return NULL;
+}
+#endif

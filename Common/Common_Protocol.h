@@ -23,10 +23,10 @@ enum
 
 typedef struct _VS_HEADER
 {
-    UINT    uiSvcCode;                          // 서비스 코드
-    UINT    uiErrCode;                          // 에러 코드(SM은 0으로 Setting)
-    UINT    uiDataLen;                          // 데이터 길이
-    UINT    uiChecksum;                         // 헤더 검증용 체크섬
+    UINT    uiSvcCode;
+    UINT    uiErrCode;
+    UINT    uiDataLen;
+    UINT    uiChecksum;
 } VS_HEADER, *PVS_HEADER;
 
 #define MAKE_VS_HEADER(header, svc, err, len) \
@@ -65,6 +65,7 @@ typedef struct VS_FILE_OPEN_S2C
 	UINT		uiPixFmt;
 	UINT		uiWidth;
 	UINT		uiHeight;
+	UINT		uiFps;
 	// opened audio info for resampling
 	UINT		uiSampleFmt;
 	UINT		uiChannelLayout;
@@ -113,3 +114,5 @@ typedef struct VS_SET_PLAY_STATUS
 {
 	UINT		uiPlayStatus;	// 0 : Play, 1 : Pause, 2 : Stop
 } VS_SET_PLAY_STATUS, *PVS_SET_PLAY_STATUS;
+
+#pragma pack(pop)  
