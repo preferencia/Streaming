@@ -7,6 +7,9 @@
 
 typedef int (*StreamCallback)(void*, int, UINT, void*);
 
+typedef list<void*>             DecodeDataList;
+typedef list<void*>::iterator   DecodeDataListIt;
+
 class CStreamSource
 {
 public:
@@ -54,7 +57,6 @@ private:
 	
 	void				Flush();
 	void				ObjectCleanUp();
-    void                CtxAndStreamCleanUp(int nTarget);  // 0 : Decoder, 1 : Transcoder
 
 #ifdef _WIN32
 	static unsigned int __stdcall	DecodeThread(void* lpParam);
@@ -74,18 +76,16 @@ private:
 	CMux*				m_pMuxer;
 
 	AVFormatContext*	m_pInFmtCtx;
-    AVCodecContext**    m_pDecCodecCtx;
-    AVStream**          m_pDecStream;
+    AVCodecContext*		m_pVideoDecCtx;
+	AVCodecContext*		m_pAudioDecCtx;
+    AVStream*			m_pDecVideoStream;
+	AVStream*			m_pDecAudioStream;
 
-    AVFormatContext*	m_pOutFmtCtx;
-    AVCodecContext**    m_pTrscCodecCtx;
-    AVStream**          m_pTrscStream;
-
-    int                 m_nDecCodecCtxSize;
-    int                 m_nDecStreamSize;
-
-    int                 m_nTrscCodecCtxSize;
-    int                 m_nTrscStreamSize;
+	AVFormatContext*	m_pOutFmtCtx;
+	AVCodecContext*		m_pVideoEncCtx;
+	AVCodecContext*		m_pAudioEncCtx;
+	AVStream*			m_pEncVideoStream;
+	AVStream*			m_pEncAudioStream;
 
 #ifdef _USE_FILTER_GRAPH
 	FilteringContext*	m_pFilterCtx;
@@ -124,5 +124,8 @@ private:
 	bool                m_bRunDecodeThread;
     bool                m_bRunEncodeThread;
 	bool				m_bPauseDecodeThread;
+
+    DecodeDataList      m_DecodedDataList;
+    DecodeDataListIt    m_DecodedDataListIt;
 };
 

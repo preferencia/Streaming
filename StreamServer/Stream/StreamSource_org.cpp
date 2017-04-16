@@ -19,18 +19,16 @@ CStreamSource::CStreamSource()
 	m_pMuxer				= NULL;
 
 	m_pInFmtCtx				= NULL;
-    m_pDecCodecCtx          = NULL;
-    m_pDecStream            = NULL;
+    m_pVideoDecCtx			= NULL;
+	m_pAudioDecCtx			= NULL;
+    m_pDecVideoStream		= NULL;
+	m_pDecAudioStream		= NULL;
 
-    m_pOutFmtCtx			= NULL;
-    m_pTrscCodecCtx         = NULL;
-    m_pTrscStream           = NULL;
-
-    m_nDecCodecCtxSize      = 0;
-    m_nDecStreamSize        = 0;
-
-    m_nTrscCodecCtxSize     = 0;
-    m_nTrscStreamSize       = 0;
+	m_pOutFmtCtx			= NULL;
+	m_pVideoEncCtx			= NULL;
+	m_pAudioEncCtx			= NULL;
+	m_pEncVideoStream		= NULL;
+	m_pEncAudioStream		= NULL;
 
 #ifdef _USE_FILTER_GRAPH
 	m_pFilterCtx			= NULL;
@@ -65,6 +63,8 @@ CStreamSource::CStreamSource()
 	m_bRunDecodeThread		= false;
     m_bRunEncodeThread		= false;
 	m_bPauseDecodeThread	= false;
+
+    m_DecodedDataList.clear();
 }
 
 
@@ -73,6 +73,9 @@ CStreamSource::~CStreamSource()
 	ObjectCleanUp();
 
 	SAFE_DELETE_ARRAY(m_pszInputFileName);
+
+	avcodec_close(m_pVideoDecCtx);
+	avcodec_close(m_pAudioDecCtx);
 
 #ifdef _USE_FILTER_GRAPH
 	for (int nIndex = 0; nIndex < m_pInFmtCtx->nb_streams; ++nIndex)
@@ -93,11 +96,20 @@ CStreamSource::~CStreamSource()
 	av_free(m_pFilterCtx);
 #endif
 
-    CtxAndStreamCleanUp(0);    
+	avcodec_free_context(&m_pVideoDecCtx);
+	avcodec_free_context(&m_pAudioDecCtx);
+
+    avformat_close_input(&m_pInFmtCtx);
 
     if (true == m_bCreateTrscVideoFile)
     {
-        CtxAndStreamCleanUp(1);
+        avcodec_close(m_pVideoEncCtx);
+	    avcodec_close(m_pAudioEncCtx);
+
+    	avcodec_free_context(&m_pVideoEncCtx);
+	    avcodec_free_context(&m_pAudioEncCtx);
+
+        avformat_free_context(m_pOutFmtCtx);
     }    
 
 #ifdef _WIN32
@@ -194,62 +206,45 @@ int CStreamSource::Open()
         return -3;
     }
 
-	float	fFps            = 0.0f;
-	UINT	uiFps           = 0;
-    int     nStreamIndex    = -1;
+	float	fFps = 0.0f;
+	UINT	uiFps = 0;
 
 	if (0 < strlen(m_szSrcFileName))
-	{
-        CtxAndStreamCleanUp(0);
+	{		
 
 		if (0 > m_pDemuxer->FileOpenProc(m_szSrcFileName, &m_pInFmtCtx))
 		{
 			return -4;
 		}
 
-        m_nDecCodecCtxSize  = m_pInFmtCtx->nb_streams;
-        m_nDecStreamSize    = m_pInFmtCtx->nb_streams;
+		if (0 > m_pDemuxer->OpenCodecContext(&m_nVideoStreamIndex, &m_pVideoDecCtx, m_pInFmtCtx, NULL, AVMEDIA_TYPE_VIDEO))
+		{
+			return -5;
+		}
+		m_pDecVideoStream = m_pInFmtCtx->streams[m_nVideoStreamIndex];		
 
-        m_pDecCodecCtx      = (AVCodecContext**)av_malloc_array(m_pInFmtCtx->nb_streams, sizeof(*m_pDecCodecCtx));
-        m_pDecStream        = (AVStream**)av_malloc_array(m_pInFmtCtx->nb_streams, sizeof(*m_pDecStream));
-
-        for (int nIndex = 0; nIndex < m_nDecCodecCtxSize; ++nIndex)
-        {
-            m_pDecCodecCtx[nIndex]  = NULL;
-            m_pDecStream[nIndex]    = NULL;
-
-            if (0 > m_pDemuxer->OpenCodecContext(&nStreamIndex, &m_pDecCodecCtx[nIndex], m_pInFmtCtx, NULL, (AVMediaType)(AVMEDIA_TYPE_VIDEO + nIndex)))
-		    {
-			    return -5;
-		    }
-
-            if (nStreamIndex != (int)(AVMEDIA_TYPE_VIDEO + nIndex))
-            {
-                return -6;
-            }
-
-		    m_pDecStream[nIndex] = m_pInFmtCtx->streams[nStreamIndex];		
-        }
+		if (0 > m_pDemuxer->OpenCodecContext(&m_nAudioStreamIndex, &m_pAudioDecCtx, m_pInFmtCtx, NULL, AVMEDIA_TYPE_AUDIO))
+		{
+			return -6;
+		}
+		m_pDecAudioStream = m_pInFmtCtx->streams[m_nAudioStreamIndex];
 	}
 
-    if ( (NULL == m_pInFmtCtx) 
-        || (NULL == m_pDecCodecCtx[AVMEDIA_TYPE_VIDEO]) 
-        || (NULL == m_pDecCodecCtx[AVMEDIA_TYPE_AUDIO]) )
+	if ((NULL == m_pInFmtCtx) || (NULL == m_pVideoDecCtx) || (NULL == m_pAudioDecCtx))
 	{
 		return -7;
 	}
 
 	// Set Video and Audio Bitrate for Encoder
-	m_llEncVideoBitRate = (_DEC_VIDEO_ENC_BITRATE < m_pDecCodecCtx[AVMEDIA_TYPE_VIDEO]->bit_rate) ? _DEC_VIDEO_ENC_BITRATE : m_pDecCodecCtx[AVMEDIA_TYPE_VIDEO]->bit_rate;
-	m_llEncAudioBitRate = (_DEC_AUDIO_ENC_BITRATE < m_pDecCodecCtx[AVMEDIA_TYPE_AUDIO]->bit_rate) ? _DEC_AUDIO_ENC_BITRATE : m_pDecCodecCtx[AVMEDIA_TYPE_AUDIO]->bit_rate;
+	m_llEncVideoBitRate = (_DEC_VIDEO_ENC_BITRATE < m_pVideoDecCtx->bit_rate) ? _DEC_VIDEO_ENC_BITRATE : m_pVideoDecCtx->bit_rate;
+	m_llEncAudioBitRate = (_DEC_AUDIO_ENC_BITRATE < m_pAudioDecCtx->bit_rate) ? _DEC_AUDIO_ENC_BITRATE : m_pAudioDecCtx->bit_rate;
 
 	// Calc fps
-	fFps				= (float)m_pDecStream[AVMEDIA_TYPE_VIDEO]->r_frame_rate.num / (float)m_pDecStream[AVMEDIA_TYPE_VIDEO]->r_frame_rate.den;
+	fFps				= (float)m_pDecVideoStream->r_frame_rate.num / (float)m_pDecVideoStream->r_frame_rate.den;
 	uiFps				= ((UINT)fFps >= fFps) ? (UINT)fFps : (UINT)fFps + 1;
 
-	ProcFileOpen(m_pDecCodecCtx[AVMEDIA_TYPE_VIDEO]->pix_fmt, m_pDecCodecCtx[AVMEDIA_TYPE_VIDEO]->width, m_pDecCodecCtx[AVMEDIA_TYPE_VIDEO]->height, uiFps,
-				 m_pDecCodecCtx[AVMEDIA_TYPE_AUDIO]->sample_fmt, m_pDecCodecCtx[AVMEDIA_TYPE_AUDIO]->channel_layout, m_pDecCodecCtx[AVMEDIA_TYPE_AUDIO]->channels, 
-                 m_pDecCodecCtx[AVMEDIA_TYPE_AUDIO]->sample_rate, m_pDecCodecCtx[AVMEDIA_TYPE_AUDIO]->frame_size);
+	ProcFileOpen(m_pVideoDecCtx->pix_fmt, m_pVideoDecCtx->width, m_pVideoDecCtx->height, uiFps,
+				 m_pAudioDecCtx->sample_fmt, m_pAudioDecCtx->channel_layout, m_pAudioDecCtx->channels, m_pAudioDecCtx->sample_rate, m_pAudioDecCtx->frame_size);
 
 	return 0;
 }
@@ -290,13 +285,12 @@ int CStreamSource::Start()
 		return -3;
 	}
 
-	if (0 > m_pDecoder->InitFromContext(m_pInFmtCtx, m_pDecCodecCtx[AVMEDIA_TYPE_VIDEO], m_pDecCodecCtx[AVMEDIA_TYPE_AUDIO]))
+	if (0 > m_pDecoder->InitFromContext(m_pInFmtCtx, m_pVideoDecCtx, m_pAudioDecCtx))
 	{
 		return -4;
 	}
 
-	//m_pDecoder->SetStreamIndex(m_nVideoStreamIndex, m_nAudioStreamIndex);
-    m_pDecoder->SetStreamIndex(AVMEDIA_TYPE_VIDEO, AVMEDIA_TYPE_AUDIO);
+	m_pDecoder->SetStreamIndex(m_nVideoStreamIndex, m_nAudioStreamIndex);
 	m_pDecoder->SetCallbackProc(this, DataProcCallback);
 
     // Start video file decode thread
@@ -777,8 +771,20 @@ int CStreamSource::SetMuxer()
 		m_pObjectManager->DestroyObject((void**)&m_pMuxer, OBJECT_TYPE_MUXER);
 	}
 
-    CtxAndStreamCleanUp(1);
-    
+	avcodec_close(m_pVideoEncCtx);
+	avcodec_close(m_pAudioEncCtx);
+
+	avcodec_free_context(&m_pVideoEncCtx);
+	avcodec_free_context(&m_pAudioEncCtx);
+
+	if ((NULL != m_pOutFmtCtx) && !(m_pOutFmtCtx->oformat->flags & AVFMT_NOFILE))
+	{
+		avio_closep(&m_pOutFmtCtx->pb);
+
+		// If no opened file, avformat_free_context() will crashed
+		avformat_free_context(m_pOutFmtCtx);
+	}
+
 	// Set Muxer
 	if (0 > m_pObjectManager->CreateObject((void**)&m_pMuxer, OBJECT_TYPE_MUXER))
 	{
@@ -790,7 +796,7 @@ int CStreamSource::SetMuxer()
         return -4;
     }
 		
-	int nStreamIndex = -1;
+	int nStreamIndxe = -1;
 
 	// Make transcoded video file path
 	snprintf(m_szTrscFileName, MAX_PATH - 1, "./TrscVideo/[Trsc][%dx%d]%s", m_nEncVideoWidth, m_nEncVideoHeight, m_pszInputFileName);
@@ -800,33 +806,21 @@ int CStreamSource::SetMuxer()
 		return -5;
 	}
 
-    m_nTrscCodecCtxSize = m_pInFmtCtx->nb_streams;
-    m_nTrscStreamSize   = m_pInFmtCtx->nb_streams;
-
-    m_pTrscCodecCtx     = (AVCodecContext**)av_malloc_array(m_nTrscCodecCtxSize, sizeof(*m_pTrscCodecCtx));
-    m_pTrscStream       = (AVStream**)av_malloc_array(m_nTrscStreamSize, sizeof(*m_pTrscStream));
-
 	m_pMuxer->SetMuxInfo(m_nEncVideoWidth, m_nEncVideoHeight, m_llEncVideoBitRate, m_llEncAudioBitRate);
 
-    for (int nIndex = 0; nIndex < m_nTrscCodecCtxSize; ++nIndex)
-    {
-        m_pTrscCodecCtx[nIndex] = NULL;
-        m_pTrscStream[nIndex]   = NULL;
-        
-        if (0 > m_pMuxer->OpenCodecContext(&nStreamIndex, &m_pTrscCodecCtx[nIndex], m_pInFmtCtx, m_pOutFmtCtx, (AVMediaType)(AVMEDIA_TYPE_VIDEO + nIndex)))
-        {
-            return -5;
-        }
-        
-        if (nStreamIndex != (int)(AVMEDIA_TYPE_VIDEO + nIndex))
-        {
-            return -6;
-        }
-        
-        m_pTrscStream[nIndex] = m_pOutFmtCtx->streams[nStreamIndex];		
-    }
+	if (0 > m_pMuxer->OpenCodecContext(&nStreamIndxe, &m_pVideoEncCtx, m_pInFmtCtx, m_pOutFmtCtx, AVMEDIA_TYPE_VIDEO))
+	{
+		return -6;
+	}
+	m_pEncVideoStream = m_pOutFmtCtx->streams[nStreamIndxe];
 
-    if ((NULL == m_pOutFmtCtx) || (NULL == m_pTrscCodecCtx[AVMEDIA_TYPE_VIDEO]) || (NULL == m_pTrscCodecCtx[AVMEDIA_TYPE_AUDIO]))
+	if (0 > m_pMuxer->OpenCodecContext(&nStreamIndxe, &m_pAudioEncCtx, m_pInFmtCtx, m_pOutFmtCtx, AVMEDIA_TYPE_AUDIO))
+	{
+		return -7;
+	}
+	m_pEncAudioStream = m_pOutFmtCtx->streams[nStreamIndxe];
+
+	if ((NULL == m_pOutFmtCtx) || (NULL == m_pVideoEncCtx) || (NULL == m_pAudioEncCtx))
 	{
 		return -8;
 	}
@@ -864,16 +858,16 @@ int CStreamSource::SetEncoder()
 	}
 
 	// for Rescaling Video Data
-	m_pEncoder->SetVideoSrcInfo(m_pDecCodecCtx[AVMEDIA_TYPE_VIDEO]->pix_fmt, m_pDecCodecCtx[AVMEDIA_TYPE_VIDEO]->width, m_pDecCodecCtx[AVMEDIA_TYPE_VIDEO]->height);
+	m_pEncoder->SetVideoSrcInfo(m_pVideoDecCtx->pix_fmt, m_pVideoDecCtx->width, m_pVideoDecCtx->height);
 
-	if (0 > m_pEncoder->InitVideoCtx(AV_PIX_FMT_YUV420P, AV_CODEC_ID_H264, m_pDecCodecCtx[AVMEDIA_TYPE_VIDEO]->time_base,
-									 m_nEncVideoWidth, m_nEncVideoHeight, m_pDecCodecCtx[AVMEDIA_TYPE_VIDEO]->gop_size, m_llEncVideoBitRate))
+	if (0 > m_pEncoder->InitVideoCtx(AV_PIX_FMT_YUV420P, AV_CODEC_ID_H264, m_pVideoDecCtx->time_base,
+									 m_nEncVideoWidth, m_nEncVideoHeight, m_pVideoDecCtx->gop_size, m_llEncVideoBitRate))
 	{
 		return -4;
 	}
 
 	if (0 > m_pEncoder->InitAudioCtx(AV_SAMPLE_FMT_FLTP, AV_CODEC_ID_AAC, AV_CH_LAYOUT_STEREO, 2,
-									 m_pDecCodecCtx[AVMEDIA_TYPE_AUDIO]->sample_rate, m_pDecCodecCtx[AVMEDIA_TYPE_AUDIO]->frame_size, m_llEncAudioBitRate))
+									 m_pAudioDecCtx->sample_rate, m_pAudioDecCtx->frame_size, m_llEncAudioBitRate))
 	{
 		return -5;
 	}
@@ -883,10 +877,10 @@ int CStreamSource::SetEncoder()
 		m_pEncoder->SetCallbackProc(this, WriteEncFrameCallback);
 	}
 
-	ProcTranscodingInfo(AV_PIX_FMT_YUV420P, AV_CODEC_ID_H264, m_pDecCodecCtx[AVMEDIA_TYPE_VIDEO]->time_base.num, m_pDecCodecCtx[AVMEDIA_TYPE_VIDEO]->time_base.den,
-						m_nEncVideoWidth, m_nEncVideoHeight, m_pDecCodecCtx[AVMEDIA_TYPE_VIDEO]->gop_size, m_llEncVideoBitRate,
+	ProcTranscodingInfo(AV_PIX_FMT_YUV420P, AV_CODEC_ID_H264, m_pVideoDecCtx->time_base.num, m_pVideoDecCtx->time_base.den,
+						m_nEncVideoWidth, m_nEncVideoHeight, m_pVideoDecCtx->gop_size, m_llEncVideoBitRate,
 						AV_SAMPLE_FMT_FLTP, AV_CODEC_ID_AAC, AV_CH_LAYOUT_STEREO, 2,
-						m_pDecCodecCtx[AVMEDIA_TYPE_AUDIO]->sample_rate, m_pDecCodecCtx[AVMEDIA_TYPE_AUDIO]->frame_size, m_llEncAudioBitRate);
+						m_pAudioDecCtx->sample_rate, m_pAudioDecCtx->frame_size, m_llEncAudioBitRate);
 
 	return 0;
 }
@@ -1150,19 +1144,19 @@ void CStreamSource::Flush()
 
 	if ((NULL != m_pDecoder) && (NULL != m_pDemuxer))
 	{
-        if (NULL != m_pDecStream[AVMEDIA_TYPE_VIDEO])
+		if (NULL != m_pDecVideoStream)
 		{
 			printf("Play the output video file with the command:\n"
 				   "ffplay -f rawvideo -pix_fmt %s -video_size %dx%d\n",
-				   av_get_pix_fmt_name(m_pDecCodecCtx[AVMEDIA_TYPE_VIDEO]->pix_fmt),
-				   m_pDecCodecCtx[AVMEDIA_TYPE_VIDEO]->width,
-				   m_pDecCodecCtx[AVMEDIA_TYPE_VIDEO]->height);
+				   av_get_pix_fmt_name(m_pVideoDecCtx->pix_fmt),
+				   m_pVideoDecCtx->width,
+				   m_pVideoDecCtx->height);
 		}
 
-        if (NULL != m_pDecStream[AVMEDIA_TYPE_AUDIO])
+		if (NULL != m_pDecAudioStream)
 		{
-			enum AVSampleFormat SampleFmt	= m_pDecCodecCtx[AVMEDIA_TYPE_AUDIO]->sample_fmt;
-			int					nChannels	= m_pDecCodecCtx[AVMEDIA_TYPE_AUDIO]->channels;
+			enum AVSampleFormat SampleFmt	= m_pAudioDecCtx->sample_fmt;
+			int					nChannels	= m_pAudioDecCtx->channels;
 			const char*			pszFmt		= NULL;
 
 			if (av_sample_fmt_is_planar(SampleFmt))
@@ -1182,7 +1176,7 @@ void CStreamSource::Flush()
 
 			printf("Play the output audio file with the command:\n"
 				"ffplay -f %s -ac %d -ar %d\n",
-				pszFmt, nChannels, m_pDecCodecCtx[AVMEDIA_TYPE_AUDIO]->sample_rate);
+				pszFmt, nChannels, m_pAudioDecCtx->sample_rate);
 		}
 	}
 
@@ -1215,70 +1209,6 @@ void CStreamSource::ObjectCleanUp()
 
 		SAFE_DELETE(m_pObjectManager);
 	}
-}
-
-
-void CStreamSource::CtxAndStreamCleanUp(int nTarget)
-{
-    switch (nTarget)
-    {
-    case 0:
-        {
-            if (NULL != m_pDecCodecCtx)
-            {
-                for (int nIndex = 0; nIndex < m_nDecCodecCtxSize; ++nIndex)
-                {
-                    avcodec_close(m_pDecCodecCtx[nIndex]);
-                    avcodec_free_context(&m_pDecCodecCtx[nIndex]);
-                }
-        
-                av_free(m_pDecCodecCtx);
-                m_pDecCodecCtx  = NULL;
-            }
-
-            if (NULL != m_pDecStream)
-            {
-                av_free(m_pDecStream);
-                m_pDecStream    = NULL;
-            }
-
-            avformat_close_input(&m_pInFmtCtx);
-            m_pInFmtCtx         = NULL;
-        }
-        break;
-
-    case 1:
-        {
-            if (NULL != m_pTrscCodecCtx)
-            {
-                for (int nIndex = 0; nIndex < m_nTrscCodecCtxSize; ++nIndex)
-                {
-                    avcodec_close(m_pTrscCodecCtx[nIndex]);
-                }
-        
-                av_free(m_pTrscCodecCtx);
-                m_pTrscCodecCtx = NULL;
-            }
-
-            if (NULL != m_pTrscStream)
-            {
-                av_free(m_pTrscStream);
-                m_pTrscStream   = NULL;
-            } 
-
-            if ((NULL != m_pOutFmtCtx) && !(m_pOutFmtCtx->oformat->flags & AVFMT_NOFILE))
-	        {
-    		    avio_closep(&m_pOutFmtCtx->pb);		        
-    	    }
-
-            avformat_free_context(m_pOutFmtCtx);
-            m_pOutFmtCtx    = NULL;
-        }
-        break;
-
-    default:
-        break;
-    }
 }
 
 
