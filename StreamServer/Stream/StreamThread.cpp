@@ -9,11 +9,9 @@ CStreamThread::CStreamThread()
 
 CStreamThread::~CStreamThread()
 {
-	CStreamSource* pStreamSource = (CStreamSource*)m_pStreamSource;
-	SAFE_DELETE(pStreamSource);
 }
 
-int CStreamThread::Init(void* pParent, StreamCallback pStreamCallbackFunc, char* pszVideoFileName, bool bCreateTrscVideoFile /* = false */)
+int CStreamThread::Init(void* pParent, StreamCallback pStreamCallbackFunc, char* pszVideoFileName)
 {
 	CStreamSource* pStreamSource = new CStreamSource;
 	if (NULL == pStreamSource)
@@ -21,7 +19,7 @@ int CStreamThread::Init(void* pParent, StreamCallback pStreamCallbackFunc, char*
 		return -1;
 	}
 
-	int nErr = pStreamSource->Init(pParent, pStreamCallbackFunc, pszVideoFileName, bCreateTrscVideoFile);
+	int nErr = pStreamSource->Init(pParent, pStreamCallbackFunc, pszVideoFileName);
 	if (0 > nErr)
 	{
 		TraceLog("Stream Source Initialize Failed. Error = %d", nErr);
@@ -31,17 +29,6 @@ int CStreamThread::Init(void* pParent, StreamCallback pStreamCallbackFunc, char*
 	m_pStreamSource = pStreamSource;
 
 	return 0;
-}
-
-int CStreamThread::Open()
-{
-    CStreamSource* pStreamSource = (CStreamSource*)m_pStreamSource;
-	if (NULL == pStreamSource)
-	{
-		return -1;
-	}
-
-    return pStreamSource->Open();
 }
 
 void CStreamThread::SetResolution(int nWidth, int nHeight, int nResetResolution)
