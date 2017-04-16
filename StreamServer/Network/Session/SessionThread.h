@@ -2,7 +2,6 @@
 
 #include "SocketThread.h"
 #include "SessionSocket.h"
-#include <map>
 
 class CSessionThread : public CSocketThread
 {
@@ -10,11 +9,15 @@ public:
     CSessionThread();
     virtual ~CSessionThread(void);
 
-    virtual bool            InitSocketThread(bool bRunSendThread = true, bool bRunRecvThread = true);
-	virtual void			SetSocket(SOCKET hSocket)	{	m_hSocket = hSocket;		}
-    virtual CConnectSocket* GetSocket()					{	return m_pSessionSocket;	}
+    virtual bool            InitSocketThread();
+	virtual int			    ActiveConnectSocket(SOCKET hConnectSocket, SOCKADDR_IN* pConnectAdr);
+    virtual CConnectSocket* GetConSocket(SOCKET hConnectSocket);
 
-private:
-	SOCKET					m_hSocket;
-	CSessionSocket*			m_pSessionSocket;
+	void					SetSessionThradNum(int nNum)	{	m_nSessionThreadNum = nNum; }
+#ifdef _WIN32
+	void					SetCPObject(HANDLE hComPort)	{	m_hComPort = hComPort;		}
+#endif
+protected:
+
+private:	
 };

@@ -5,69 +5,53 @@
 typedef list<VideoListData*>			VideoListDataQueue;
 typedef list<VideoListData*>::iterator	VideoListDataQueueIt;
 
+#define _DEC_NEW_LINE           (10)
+#define _DEC_CARRIAGE_RETURN    (13)
+
 CSessionSocket::CSessionSocket()
 {
-	m_pStreamThread = NULL;
+	m_pStreamThread				= NULL;
+
+#ifdef _WIN32
+	m_hStreamStopCheckThread	= NULL;
+#endif
+
+	m_bRunStreamStopCheckThread = false;
+	m_bRecvStreamStopSignal		= false;
 }
 
 CSessionSocket::~CSessionSocket()
 {
+	m_bRunStreamStopCheckThread = false;
+
+#ifdef _WIN32
+	if (NULL != m_hStreamStopCheckThread)
+	{
+		WaitForSingleObject(m_hStreamStopCheckThread, INFINITE);
+		CloseHandle(m_hStreamStopCheckThread);
+		m_hStreamStopCheckThread = NULL;
+	}
+#endif // _WIN32
+
+
+	if (NULL != m_pStreamThread)
+	{
+		m_pStreamThread->Stop();
+	}
 	SAFE_DELETE(m_pStreamThread);
 }
 
-bool CSessionSocket::Send(char* pData, int nDataLen)
+int CSessionSocket::ProcSvcData(int nSvcCode, int nSvcDataLen, char* lpBuf)
 {
-	if ((NULL == pData) || (0 >= nDataLen))
+	int nRet = 0;
+
+	if (0 > (nRet = CConnectSocket::ProcSvcData(nSvcCode, nSvcDataLen, lpBuf)))
 	{
-		TraceLog("Data is wrong!");
-		return false;
+		TraceLog("Error Param checked - err = [%d]", nRet);
+		return nRet;
 	}
 
-	if (INVALID_SOCKET == m_hConnectSocket)
-	{
-		TraceLog("Session socket is invalid!");
-		return false;
-	}
-
-	return CConnectSocket::Send(pData, nDataLen);
-}
-
-UINT CSessionSocket::ProcessReceive(char* lpBuf, int nDataLen)
-{
-	if ((NULL == lpBuf) || (0 >= nDataLen))
-	{
-		TraceLog("Data is wrong!");
-		return false;
-	}
-
-	if (INVALID_SOCKET == m_hConnectSocket)
-	{
-		TraceLog("Client socket is invalid!");
-		return false;
-	}
-
-	PVS_HEADER pHeader      = (PVS_HEADER)lpBuf;
-    unsigned int uiChecksum = pHeader->uiSvcCode ^ pHeader->uiErrCode ^ pHeader->uiDataLen;
-    if (pHeader->uiChecksum != uiChecksum)
-    {
-        TraceLog("Checksum is invalid!");
-		return false;
-    }
-
-    int nRecvSvcCode        = pHeader->uiSvcCode;
-    int nRecvErrCode        = pHeader->uiErrCode;
-    int nRecvDataLen        = pHeader->uiDataLen;
-    int nHeaderSize			= sizeof(VS_HEADER);
-
-	// shortage data
-    if ((0 < nRecvDataLen) && (nDataLen < (nHeaderSize + nRecvDataLen)))
-    {
-        return (nHeaderSize + nRecvDataLen) - nDataLen;
-    }
-
-	// over data
-
-	switch (nRecvSvcCode)
+	switch (nSvcCode)
 	{
 	case SVC_GET_LIST:
 		{
@@ -77,17 +61,17 @@ UINT CSessionSocket::ProcessReceive(char* lpBuf, int nDataLen)
 
 	case SVC_FILE_OPEN:
 		{
-			PVS_FILE_OPEN_REQ pReqData				= (PVS_FILE_OPEN_REQ)(lpBuf + sizeof(VS_HEADER));
+			PVS_FILE_OPEN_REQ pReqData				= (PVS_FILE_OPEN_REQ)lpBuf;
 			if (NULL != pReqData)
 			{
-				ProcFileOpen(pReqData->pszFileName, nRecvDataLen);
+				ProcFileOpen(pReqData->pszFileName, nSvcDataLen);
 			}
 		}
 		break;
 
 	case SVC_SELECT_RESOLUTION:
 		{
-			PVS_SELECT_RESOLUTION_REQ pReqData		= (PVS_SELECT_RESOLUTION_REQ)(lpBuf + sizeof(VS_HEADER));
+			PVS_SELECT_RESOLUTION_REQ pReqData		= (PVS_SELECT_RESOLUTION_REQ)lpBuf;
 			if (NULL != pReqData)
 			{
 				ProcSelectResolution(pReqData->uiWidth, pReqData->uiHeight, pReqData->uiResetResolution);
@@ -97,7 +81,7 @@ UINT CSessionSocket::ProcessReceive(char* lpBuf, int nDataLen)
 
 	case SVC_SET_PLAY_STATUS:
 		{
-			PVS_SET_PLAY_STATUS pReqData = (PVS_SET_PLAY_STATUS)(lpBuf + sizeof(VS_HEADER));
+			PVS_SET_PLAY_STATUS pReqData = (PVS_SET_PLAY_STATUS)lpBuf;
 			if (NULL != pReqData)
 			{
 				ProcSetPlayStatus(pReqData->uiPlayStatus);
@@ -116,7 +100,7 @@ int CSessionSocket::ProcVideoList()
 {
 	if (NULL != m_pSocketThread)
 	{
-		FILE* fpList = fopen("Video/VideoList.ini", "r");
+		FILE* fpList = fopen("./Video/VideoList.ini", "r");
 		if (NULL != fpList)
 		{
 			unsigned int	uiSendBufLen			= 0;
@@ -128,25 +112,30 @@ int CSessionSocket::ProcVideoList()
 			VideoListDataQueueIt	It;
 
 			while (!feof(fpList))
-			{
-				char szFileName[1024] = {0, };
+			{                
+				char    szFileName[1024]    = {0, };
 				fgets(szFileName, sizeof(szFileName), fpList);
+                int     nFileNameLen        = strlen(szFileName);
+
+                // except new line and carriage return
+                for (int nIndex = 0; nIndex < strlen(szFileName); ++nIndex)
+                {
+                    if ( (_DEC_NEW_LINE == szFileName[nIndex]) 
+                        || (_DEC_CARRIAGE_RETURN == szFileName[nIndex]) )
+                    {
+                        --nFileNameLen;
+                    }
+                }                
 				
 				if (0 < strlen(szFileName))
 				{
-					int nVideoListData				= sizeof(VideoListData) + strlen(szFileName) + 1;
-					char* pData						= new char[nVideoListData];
-					memset(pData, 0, nVideoListData);
+					int nVideoListDataSize			= sizeof(VideoListData) + nFileNameLen + 1;
+					char* pData						= new char[nVideoListDataSize];
+					memset(pData, 0, nVideoListDataSize);
 
 					PVideoListData pVideoListData	= (PVideoListData)pData;
-					pVideoListData->nFileNameLen	= strlen(szFileName);
-					if ('\n' == szFileName[pVideoListData->nFileNameLen - 1])	// remove carriage return
-					{
-						--pVideoListData->nFileNameLen;
-					}
-
-					strncpy(pVideoListData->pszFileName, szFileName, pVideoListData->nFileNameLen);
-					pVideoListData->pszFileName[pVideoListData->nFileNameLen] = NULL;
+					pVideoListData->nFileNameLen	= nFileNameLen;
+					memcpy(pData + sizeof(int), szFileName, pVideoListData->nFileNameLen);
 
 					VideoListDataQ.push_back(pVideoListData);
 
@@ -197,7 +186,7 @@ int CSessionSocket::ProcVideoList()
 				MAKE_VS_HEADER(pHeader, SVC_GET_LIST, -1, 0);
 			}
 
-			((CSocketThread*)m_pSocketThread)->Send(pSendBuf, uiSendBufLen);
+			((CSocketThread*)m_pSocketThread)->Send(m_hSocket, uiSendBufLen, pSendBuf);
 		}
 	}
 	return 0;
@@ -210,13 +199,6 @@ int CSessionSocket::ProcFileOpen(char* pszFileName, int nFileNameLen)
 		return -1;
 	}
 
-	char szPath[1024] = { 0, };
-	char* pszCopyFileName = new char[nFileNameLen + 1];
-	strncpy(pszCopyFileName, pszFileName, nFileNameLen);
-	pszCopyFileName[nFileNameLen] = NULL;
-	snprintf(szPath, 1023, "Video/%s", pszCopyFileName);
-
-	SAFE_DELETE_ARRAY(pszCopyFileName);
 	SAFE_DELETE(m_pStreamThread);
 
 	m_pStreamThread = new CStreamThread;
@@ -225,10 +207,32 @@ int CSessionSocket::ProcFileOpen(char* pszFileName, int nFileNameLen)
 		return -2;
 	}
 
-	if (0 > m_pStreamThread->Init(this, StreamCallback, szPath))
+	if (0 > m_pStreamThread->Init(this, StreamCallback, pszFileName, true))
 	{
 		return -3;
 	}
+
+    if (0 > m_pStreamThread->Open())
+    {
+        return -4;
+    }
+
+	// Start stream stop check thread
+#ifdef _WIN32
+	m_hStreamStopCheckThread = (HANDLE)_beginthreadex(NULL, 0, StreamStopCheckThread, this, 0, NULL);
+	if (NULL != m_hStreamStopCheckThread)
+	{
+		m_bRunStreamStopCheckThread = true;
+	}
+#else
+	int nRet = pthread_create(&m_hStreamStopCheckThread, NULL, StreamStopCheckThread, this);
+	if (0 == nRet)
+	{
+		m_bRunStreamStopCheckThread = true;
+	}
+
+	pthread_detach(m_hStreamStopCheckThread);
+#endif
 
 	return 0;
 }
@@ -292,7 +296,7 @@ int CSessionSocket::ProcSetPlayStatus(UINT uiPlayStatus)
 	PVS_SET_PLAY_STATUS pRepData		= (PVS_SET_PLAY_STATUS)(pSendBuf + sizeof(VS_HEADER));
 	pRepData->uiPlayStatus				= uiRet;	
 
-	((CSocketThread*)m_pSocketThread)->Send(pSendBuf, uiSendBufLen);
+	((CSocketThread*)m_pSocketThread)->Send(m_hSocket, uiSendBufLen, pSendBuf);
 
 	return 0;
 }
@@ -320,20 +324,59 @@ int CSessionSocket::StreamCallback(void* pObject, int nOpCode, UINT uiDataSize, 
 	PVS_HEADER	 pHeader		= (PVS_HEADER)pSendBuf;
 	MAKE_VS_HEADER(pHeader, SVC_FILE_OPEN + nOpCode, 0, uiDataSize);
 
-	TraceLog("SVC = %d, Data Size = %u, Checksum = %u", SVC_FILE_OPEN + nOpCode, uiDataSize, pHeader->uiChecksum);
+	TraceLog("CSessionSocket::StreamCallback - SVC = %d, Data Size = %u, Checksum = %u", SVC_FILE_OPEN + nOpCode, uiDataSize, pHeader->uiChecksum);
 
 	if ((0 < uiDataSize) && (NULL != pData))
 	{
 		memcpy(pSendBuf + sizeof(VS_HEADER), pData, uiDataSize);
 	}
 
-	((CSocketThread*)pThis->m_pSocketThread)->Send(pSendBuf, uiSendBufLen);
+	((CSocketThread*)pThis->m_pSocketThread)->Send(pThis->m_hSocket, uiSendBufLen, pSendBuf);
 
-	// Remove Stream Thread
+	// Recv play complete or stop code. Remove stream thread
 	if (SVC_FILE_CLOSE == SVC_FILE_OPEN + nOpCode)
 	{
-		SAFE_DELETE(pThis->m_pStreamThread);
+		pThis->m_bRecvStreamStopSignal = true;
 	}
 
 	return 0;
+}
+
+
+#ifdef _WIN32
+unsigned int __stdcall  CSessionSocket::StreamStopCheckThread(void* lpParam)
+#else
+void*                   CSessionSocket::StreamStopCheckThread(void* lpParam)
+#endif
+{
+	CSessionSocket* pThis = (CSessionSocket*)lpParam;
+	if (NULL == pThis)
+	{
+		return 0;
+	}
+
+	while (true == pThis->m_bRunStreamStopCheckThread)
+	{
+		if (true == pThis->m_bRecvStreamStopSignal)
+		{
+			SAFE_DELETE(pThis->m_pStreamThread);
+			pThis->m_bRecvStreamStopSignal = false;
+			break;
+		}
+
+#ifdef _WIN32
+		Sleep(10);
+#else
+		usleep(10000);
+#endif
+	}
+
+#ifdef _WIN32
+	CloseHandle(pThis->m_hStreamStopCheckThread);
+	pThis->m_hStreamStopCheckThread = NULL;
+
+	return 1;
+#else
+	return NULL;
+#endif 
 }
