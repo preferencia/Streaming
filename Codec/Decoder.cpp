@@ -1,13 +1,13 @@
 #include "stdafx.h"
 #include "Decoder.h"
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 #pragma warning(disable:4996)
 #endif
 
 CDecoder::CDecoder()
 {
-	m_nCodecType			= CODEC_TYPE_DECODER;
+	m_nCodecType			= OBJECT_TYPE_DECODER;
 
 	m_pFrame				= NULL;
 
@@ -27,15 +27,10 @@ CDecoder::CDecoder()
 
 	m_nVideoDstBufSize		= 0;
 
-	memset(m_VideoDstLineSize,	0,	_DEC_PLANE_SIZE * sizeof(int));
-	memset(m_pVideoDstData,		0,	_DEC_PLANE_SIZE * sizeof(uint8_t*));
+	memset(m_nVideoDstLineSizeArray,	0,	_DEC_PLANE_SIZE * sizeof(int));
+	memset(m_pVideoDstData,		        0,	_DEC_PLANE_SIZE * sizeof(uint8_t*));
 
 	m_uiDecAudioSize		= 0;
-
-	m_hDecodeThread			= NULL;
-	m_hDecodeThreadMutex	= NULL;
-	m_bRunDecodeThread		= false;
-	m_bPauseDecodeThread	= false;
 
 	m_pObject				= NULL;
 	m_pDataProcCallback		= NULL;
@@ -44,8 +39,6 @@ CDecoder::CDecoder()
 
 CDecoder::~CDecoder()
 {
-	StopDecodeThread();
-
 	if (NULL != m_pVideoDstData[0])
 	{
 		av_free(m_pVideoDstData[0]);
@@ -56,6 +49,34 @@ CDecoder::~CDecoder()
 		av_frame_free(&m_pFrame);
 		m_pFrame = NULL;
 	}
+}
+
+
+void CDecoder::SetFramePtsData(int nStreamIndex, 
+                               int64_t llPts, int64_t llPktPts, int64_t llPktDts)
+{
+    if (NULL == m_pFrame)
+    {
+        return;
+    }
+
+    m_pFrame->pts       = llPts;
+    m_pFrame->pkt_pts   = llPktPts;
+    m_pFrame->pkt_dts   = llPktDts;
+}
+
+
+void CDecoder::GetFramePtsData(int nStreamIndex, 
+                               int64_t& llPts, int64_t& llPktPts, int64_t& llPktDts)
+{
+    if (NULL == m_pFrame)
+    {
+        return;
+    }
+
+    llPts       = m_pFrame->pts;
+    llPktPts    = m_pFrame->pkt_pts;
+    llPktDts    = m_pFrame->pkt_dts;
 }
 
 
@@ -85,6 +106,17 @@ void CDecoder::SetAudioSrcInfo(AVSampleFormat AVSrcSampleFmt,
 }
 
 
+int CDecoder::ReadFrameData()
+{
+    if (0 > av_read_frame(m_pFmtCtx, &m_Pkt))
+    {
+        return -1;
+    }
+
+    return m_Pkt.stream_index;
+}
+
+
 int64_t CDecoder::Decode(int nStreamIndex,
 						 unsigned char* pSrcData, unsigned int uiSrcDataSize,
 						 unsigned char** ppEncData, unsigned int& uiEncDataSize)
@@ -101,14 +133,51 @@ int64_t CDecoder::Decode(int nStreamIndex,
 		{
 			return DecodeAudio(pSrcData, uiSrcDataSize, ppEncData, uiEncDataSize);
 		}
+        break;
 
-		default:
-			break;
+    case AVMEDIA_TYPE_NB + 1:
+    case AVMEDIA_TYPE_NB + 2:
+        {
+            return DecodeCachedData(nStreamIndex - (AVMEDIA_TYPE_NB + 1));
+        }
+        break;
+
+	default:
+		break;
 	}
 
 	return 0;
 }
 
+
+int64_t CDecoder::DecodeCachedData(int nCached)
+{
+    int64_t llRet		= 0;
+    int     nGotFrame   = -1;
+
+    AVPacket OrgPkt = m_Pkt;
+	do
+	{
+		llRet = DecodePacket(&nGotFrame, nCached);
+		if (0 > llRet)
+		{
+			break;
+		}
+
+        if (0 == nCached)
+        {
+            m_Pkt.data += llRet;
+    		m_Pkt.size -= llRet;
+        }		
+    } while ((0 == nCached) ? (m_Pkt.size > 0) : nGotFrame);
+
+	if (1 == nGotFrame)
+	{
+		av_packet_unref(&OrgPkt);
+	}
+
+    return llRet;
+}
 
 int64_t CDecoder::DecodeVideo(unsigned char* pSrcData, unsigned int uiSrcDataSize,
 							  unsigned char** ppDstData, unsigned int& uiDstDataSize)
@@ -143,25 +212,26 @@ int64_t CDecoder::DecodeVideo(unsigned char* pSrcData, unsigned int uiSrcDataSiz
 		m_Pkt.size -= llRet;
 	} while (m_Pkt.size > 0);
 
-	av_packet_unref(&OrgPkt);
+	if (1 == nGotFrame)
+	{
+		av_packet_unref(&OrgPkt);
+	}
 
-	//// YUV420 to RGB32 (client)
-	//unsigned char*	pScalingData		= NULL;
-	//int64_t			llScalingDataSize	= ScalingVideo(m_pVideoCtx->width, m_pVideoCtx->height, m_pVideoCtx->pix_fmt, m_pVideoDstData[0],
-	//												 m_pVideoCtx->width, m_pVideoCtx->height, AV_PIX_FMT_RGB32, &pScalingData);
+	// YUV420 to RGB32 (client)
+	unsigned char*	pScalingData		= NULL;
+	int64_t			llScalingDataSize	= ScalingVideo(m_pVideoCtx->width, m_pVideoCtx->height, m_pVideoCtx->pix_fmt, m_pVideoDstData[0],
+													 m_pVideoCtx->width, m_pVideoCtx->height, AV_PIX_FMT_RGB32, &pScalingData);
 
-	//if ((0 >= llScalingDataSize) || (NULL == pScalingData))
-	//{
-	//	return -3;
-	//}
+	if ((0 >= llScalingDataSize) || (NULL == pScalingData))
+	{
+		return -3;
+	}
 
-	//*ppDstData		= (uint8_t*)pScalingData;
-	//uiDstDataSize	= llScalingDataSize;
+	*ppDstData		= (uint8_t*)pScalingData;
+	uiDstDataSize	= llScalingDataSize;
 
-	//av_freep(&pScalingData);
-
-	*ppDstData		= m_pVideoDstData[0];
-	uiDstDataSize	= m_nVideoDstBufSize;
+	//*ppDstData		= m_pVideoDstData[0];
+	//uiDstDataSize	= m_nVideoDstBufSize;
 
 	return llRet;
 }
@@ -180,12 +250,12 @@ int64_t CDecoder::DecodeAudio(unsigned char* pSrcData, unsigned int uiSrcDataSiz
 		return -2;
 	}
 
-	int		nGotFrame = 0;
-	int64_t llRet = 0;
+	int		nGotFrame   = 0;
+    int64_t llRet       = 0;
 
-	m_Pkt.data = pSrcData;
-	m_Pkt.size = uiSrcDataSize;
-	m_Pkt.stream_index = m_nAudioStreamIndex;
+	m_Pkt.data          = pSrcData;
+	m_Pkt.size          = uiSrcDataSize;
+	m_Pkt.stream_index  = m_nAudioStreamIndex;
 
 	AVPacket OrgPkt = m_Pkt;
 	do
@@ -200,7 +270,10 @@ int64_t CDecoder::DecodeAudio(unsigned char* pSrcData, unsigned int uiSrcDataSiz
 		m_Pkt.size -= llRet;
 	} while (m_Pkt.size > 0);
 
-	av_packet_unref(&OrgPkt);
+	if (1 == nGotFrame)
+	{
+		av_packet_unref(&OrgPkt);
+	}
 
 	// resampling (FLTP AAC to 16bit PCM)
 	AVSampleFormat	AVSrcSampleFmt		= m_AVSrcSampleFmt;
@@ -256,66 +329,10 @@ int64_t CDecoder::DecodeAudio(unsigned char* pSrcData, unsigned int uiSrcDataSiz
 	*ppDstData		= pResamplingData;
 	uiDstDataSize	= llResampligDataSize;
 
-	av_freep(&pResamplingData);
-	pResamplingData = NULL;
-
 	//*ppDstData = m_pFrame->extended_data[0];
 	//uiDstDataSize = m_uiDecAudioSize;
 
 	return llRet;
-}
-
-
-int CDecoder::RunDecodeThread()
-{
-	if (NULL == m_pFmtCtx)
-	{
-		return -1;
-	}
-
-	// start thread
-#ifdef _WINDOWS
-	m_hDecodeThreadMutex = CreateMutex(NULL, FALSE, NULL);
-
-	m_hDecodeThread = (HANDLE)_beginthreadex(NULL, 0, DecodeThread, this, 0, NULL);
-	if (NULL != m_hDecodeThread)
-	{
-		m_bRunDecodeThread = true;
-	}
-#else
-	pthread_mutex_init(&m_hDecodeThreadMutex, NULL);
-
-	int nRet = pthread_create(&m_hDecodeThread, NULL, DecodeThread, this);
-	if (0 == nRet)
-	{
-		m_bRunDecodeThread = true;
-	}
-
-	pthread_detach(m_hDecodeThread);
-#endif
-
-	return 0;
-}
-
-
-void CDecoder::StopDecodeThread()
-{
-	m_bRunDecodeThread = false;
-
-#ifdef _WINDOWS
-	if (NULL != m_hDecodeThread)
-	{
-		WaitForSingleObject(m_hDecodeThread, INFINITE);
-	}
-
-	if (NULL != m_hDecodeThreadMutex)
-	{
-		CloseHandle(m_hDecodeThreadMutex);
-		m_hDecodeThreadMutex = NULL;
-	}
-#else
-	pthread_mutex_destroy(&m_hDecodeThreadMutex);
-#endif
 }
 
 
@@ -328,47 +345,18 @@ int CDecoder::DecodePacket(int *pGotFrame, int nCached)
 
 	char szLog[AV_ERROR_MAX_STRING_SIZE] = { 0, };
 
+	av_packet_rescale_ts(&m_Pkt,
+						 m_pFmtCtx->streams[m_Pkt.stream_index]->time_base,
+						 m_pFmtCtx->streams[m_Pkt.stream_index]->codec->time_base);
+
 	if (m_Pkt.stream_index == m_nVideoStreamIndex)
 	{
 		/* decode video frame */
 		nRet = avcodec_decode_video2(m_pVideoCtx, m_pFrame, pGotFrame, &m_Pkt);
 		if (0 > nRet)
 		{
-			fprintf(stderr, "Error decoding video frame (%s)\n", av_make_error_string(szLog, AV_ERROR_MAX_STRING_SIZE, nRet));
+            TraceLog("Error decoding video frame (%s)", av_make_error_string(szLog, AV_ERROR_MAX_STRING_SIZE, nRet));
 			return nRet;
-		}
-
-		if (*pGotFrame)
-		{
-			if ((m_pFrame->width != m_nWidth)
-				|| (m_pFrame->height != m_nHeight)
-				|| (m_pFrame->format != m_PixelFmt))
-			{
-				/* To handle this change, one could call av_image_alloc again and
-				* decode the following frames into another rawvideo file. */
-				fprintf(stderr, "Error: Width, height and pixel format have to be "
-					"constant in a rawvideo file, but the width, height or "
-					"pixel format of the input video changed:\n"
-					"old: width = %d, height = %d, format = %s\n"
-					"new: width = %d, height = %d, format = %s\n",
-					m_nWidth, m_nHeight, av_get_pix_fmt_name(m_PixelFmt),
-					m_pFrame->width, m_pFrame->height,
-					av_get_pix_fmt_name((AVPixelFormat)m_pFrame->format));
-				return -1;
-			}
-
-			printf("video_frame%s n:%d coded_n:%d pts:%s\n",
-				nCached ? "(cached)" : "",
-				m_nVideoFrameCount++, m_pFrame->coded_picture_number,
-				av_ts_make_time_string(szLog, m_pFrame->pts, &m_pAudioCtx->time_base));
-
-			/* copy decoded frame to destination buffer:
-			* this is required since rawvideo expects non aligned data */
-			av_image_copy(m_pVideoDstData, m_VideoDstLineSize,
-						 (const uint8_t **)(m_pFrame->data), m_pFrame->linesize,
-						 m_PixelFmt, m_nWidth, m_nHeight);
-
-			ProcDecodeData(DATA_TYPE_VIDEO, m_nVideoDstBufSize, m_pVideoDstData[0], (int)m_pFrame->pict_type);
 		}
 	}
 	else if (m_Pkt.stream_index == m_nAudioStreamIndex)
@@ -377,7 +365,7 @@ int CDecoder::DecodePacket(int *pGotFrame, int nCached)
 		nRet = avcodec_decode_audio4(m_pAudioCtx, m_pFrame, pGotFrame, &m_Pkt);
 		if (0 > nRet)
 		{
-			fprintf(stderr, "Error decoding audio frame (%s)\n", av_make_error_string(szLog, AV_ERROR_MAX_STRING_SIZE, nRet));
+            TraceLog("Error decoding audio frame (%s)", av_make_error_string(szLog, AV_ERROR_MAX_STRING_SIZE, nRet));
 			return nRet;
 		}
 
@@ -386,19 +374,68 @@ int CDecoder::DecodePacket(int *pGotFrame, int nCached)
 		* Sample: fate-suite/lossless-audio/luckynight-partial.shn
 		* Also, some decoders might over-read the packet. */
 		nDecoded = FFMIN(nRet, m_Pkt.size);
+	}
 
-		if (*pGotFrame)
+	if (*pGotFrame)
+	{
+		int				nPictType	= AV_PICTURE_TYPE_NONE;
+		unsigned int	uiDataSize	= 0; 
+		unsigned char*	pData		= NULL;
+
+		m_pFrame->pts				= av_frame_get_best_effort_timestamp(m_pFrame);
+
+#ifdef _USE_FILTER_GRAPH
+		ProcDecodeData(m_Pkt.stream_index, m_pFrame);
+#else
+		if (m_Pkt.stream_index == m_nVideoStreamIndex)
 		{
-			size_t unpadded_linesize = m_pFrame->nb_samples * av_get_bytes_per_sample((AVSampleFormat)m_pFrame->format);
-			printf("audio_frame%s n:%d nb_samples:%d pts:%s\n",
-					nCached ? "(cached)" : "",
-					m_nAudioFrameCount++, m_pFrame->nb_samples,
-					av_ts_make_time_string(szLog, m_pFrame->pts, &m_pAudioCtx->time_base));
+			if ((m_pFrame->width != m_nWidth)
+				|| (m_pFrame->height != m_nHeight)
+				|| (m_pFrame->format != m_PixelFmt))
+			{
+				/* To handle this change, one could call av_image_alloc again and
+				* decode the following frames into another rawvideo file. */
+				TraceLog("Error: Width, height and pixel format have to be "
+						 "constant in a rawvideo file, but the width, height or "
+						 "pixel format of the input video changed:\n"
+						 "old: width = %d, height = %d, format = %s\n"
+						 "new: width = %d, height = %d, format = %s",
+						 m_nWidth, m_nHeight, av_get_pix_fmt_name(m_PixelFmt),
+						 m_pFrame->width, m_pFrame->height,
+						 av_get_pix_fmt_name((AVPixelFormat)m_pFrame->format));
+				return -1;
+			}
 
-			m_uiDecAudioSize = unpadded_linesize;
+			TraceLog("video_frame%s n:%d coded_n:%d pts:%s",
+					 nCached ? "(cached)" : "",
+					 m_nVideoFrameCount++, m_pFrame->coded_picture_number,
+					 av_ts_make_time_string(szLog, m_pFrame->pts, &m_pVideoCtx->time_base));
 
-			ProcDecodeData(DATA_TYPE_AUDIO, unpadded_linesize, m_pFrame->extended_data[0]);
+			/* copy decoded frame to destination buffer:
+			* this is required since rawvideo expects non aligned data */
+			av_image_copy(m_pVideoDstData, m_nVideoDstLineSizeArray,
+						  (const uint8_t**)(m_pFrame->data), m_pFrame->linesize,
+						  m_PixelFmt, m_nWidth, m_nHeight);
+
+			nPictType					= (int)m_pFrame->pict_type;
+			uiDataSize					= m_nVideoDstBufSize;
+			pData						= m_pVideoDstData[0];
 		}
+		else if (m_Pkt.stream_index == m_nAudioStreamIndex)
+		{
+			size_t unpadded_linesize	= m_pFrame->nb_samples * av_get_bytes_per_sample((AVSampleFormat)m_pFrame->format);
+			TraceLog("audio_frame%s n:%d nb_samples:%d pts:%s",
+					 nCached ? "(cached)" : "",
+					 m_nAudioFrameCount++, m_pFrame->nb_samples,
+					 av_ts_make_time_string(szLog, m_pFrame->pts, &m_pAudioCtx->time_base));
+
+			m_uiDecAudioSize			= unpadded_linesize;
+			uiDataSize					= unpadded_linesize;
+			pData						= m_pFrame->extended_data[0];
+		}
+
+		ProcDecodeData(m_Pkt.stream_index, nPictType, uiDataSize, pData);
+#endif
 	}
 
 	/* If we use frame reference counting, we own the data and need
@@ -410,17 +447,28 @@ int CDecoder::DecodePacket(int *pGotFrame, int nCached)
 }
 
 
-int CDecoder::ProcDecodeData(int nDataType, unsigned int uiDataSize, unsigned char* pData, int nPictType /* = 0 */)
+#ifdef _USE_FILTER_GRAPH
+int CDecoder::ProcDecodeData(int nMediaType, AVFrame* pFrame)
+#else
+int CDecoder::ProcDecodeData(int nDataType, int nPictType, unsigned int uiDataSize, unsigned char* pData)
+#endif
 {
 	if ((NULL != m_pObject) && (NULL != m_pDataProcCallback))
 	{
-		m_pDataProcCallback(m_pObject, nDataType, uiDataSize, pData, nPictType);
+#ifdef _USE_FILTER_GRAPH
+		m_pDataProcCallback(m_pObject, nMediaType, pFrame);
+#else
+		m_pDataProcCallback(m_pObject, nDataType, nPictType, uiDataSize, pData);
+#endif
+
+        return 0;
 	}
 
 	return -1;
 }
 
 
+#ifndef _USE_FILTER_GRAPH
 int CDecoder::AllocVideoBuffer()
 {
 	if ((0 == m_nWidth) || (0 == m_nHeight) || (AV_PIX_FMT_NONE == m_PixelFmt))
@@ -428,15 +476,16 @@ int CDecoder::AllocVideoBuffer()
 		return -1;
 	}
 
-	m_nVideoDstBufSize = av_image_alloc(m_pVideoDstData, m_VideoDstLineSize, m_nWidth, m_nHeight, m_PixelFmt, 1);
+	m_nVideoDstBufSize = av_image_alloc(m_pVideoDstData, m_nVideoDstLineSizeArray, m_nWidth, m_nHeight, m_PixelFmt, 1);
 	if (0 > m_nVideoDstBufSize)
 	{
-		fprintf(stderr, "Could not allocate raw video buffer\n");
+		TraceLog("Could not allocate raw video buffer");
 		return -2;
 	}
 
 	return 0;
 }
+#endif
 
 
 int CDecoder::InitFrame()
@@ -447,7 +496,7 @@ int CDecoder::InitFrame()
 		m_pFrame = av_frame_alloc();
 		if (NULL == m_pFrame)
 		{
-			fprintf(stderr, "Could not allocate frame\n");
+			TraceLog("Could not allocate frame");
 			return -1;
 		}
 	}	
@@ -455,72 +504,4 @@ int CDecoder::InitFrame()
 	m_bInitFrame	= true;
 
 	return 0;
-}
-
-
-#ifdef _WINDOWS
-unsigned int __stdcall CDecoder::DecodeThread(void* lpParam)
-#else
-void* CDecoder::DecodeThread(void* lpParam)
-#endif
-{
-	CDecoder* pThis = (CDecoder*)lpParam;
-	if (NULL == pThis)
-	{
-		return 0;
-	}
-
-	int nRet		= 0;
-	int nGotFrame	= -1;
-
-	/* read frames from the file */
-	while ( (true == pThis->m_bRunDecodeThread) 
-			&& (0 <= av_read_frame(pThis->m_pFmtCtx, &pThis->m_Pkt)) )
-	{
-		AVPacket OrgPkt = pThis->m_Pkt;
-		do
-		{
-			nRet = pThis->DecodePacket(&nGotFrame, 0);
-			if (0 > nRet)
-			{
-				break;
-			}
-
-			pThis->m_Pkt.data += nRet;
-			pThis->m_Pkt.size -= nRet;
-		} while (pThis->m_Pkt.size > 0);
-
-		av_packet_unref(&OrgPkt);
-
-		// if pause, wait
-		while (true == pThis->m_bPauseDecodeThread)
-		{
-#ifdef _WINDOWS
-			Sleep(10);
-#else
-			usleep(10);
-#endif
-		}
-	}
-
-	/* flush cached frames */
-	pThis->m_Pkt.data = NULL;
-	pThis->m_Pkt.size = 0;
-
-	do
-	{
-		pThis->DecodePacket(&nGotFrame, 1);
-	} while (nGotFrame);
-
-	printf("Decoding completed.\n");
-	pThis->ProcDecodeData(DATA_TYPE_FLUSH, 0, NULL);
-
-#ifdef _WINDOWS
-	CloseHandle(pThis->m_hDecodeThread);
-	pThis->m_hDecodeThread = NULL;
-
-	return 1;
-#else
-	return NULL;
-#endif 
 }

@@ -19,7 +19,7 @@ CCodec::CCodec()
 	m_nWidth				= 0;
 	m_nHeight				= 0;
 
-	m_nCodecType			= CODEC_TYPE_NONE;
+	m_nCodecType			= OBJECT_TYPE_NONE;
 
 	m_bInitFrame			= false;
 	m_bInitPacket			= false;
@@ -78,13 +78,15 @@ int CCodec::InitFromContext(AVFormatContext* pFmtCtx, AVCodecContext* pVideoCtx,
 		InitPacket();
 	}
 
-	if (CODEC_TYPE_DECODER == m_nCodecType)
+#ifndef _USE_FILTER_GRAPH
+	if (OBJECT_TYPE_DECODER == m_nCodecType)
 	{
 		if (0 > AllocVideoBuffer())
 		{
 			return -3;
 		}
 	}
+#endif
 
 	m_bNeedCtxCleanUp = false;
 
@@ -94,7 +96,8 @@ int CCodec::InitFromContext(AVFormatContext* pFmtCtx, AVCodecContext* pVideoCtx,
 
 int CCodec::InitVideoCtx(AVPixelFormat PixFmt, AVCodecID VideoCodecID, AVRational TimeBase, int nWidth, int nHeight, int nGopSize, unsigned int uiBitrate)
 {
-	int nErr = 0;
+	int         nErr        = 0;
+    AVCodec*    pVideoCodec = NULL;
 
 	if (NULL == m_pFmtCtx)
 	{
@@ -107,23 +110,22 @@ int CCodec::InitVideoCtx(AVPixelFormat PixFmt, AVCodecID VideoCodecID, AVRationa
 		}
 	}
 
-	if (NULL != m_pAudioCtx)
+	if (NULL != m_pVideoCtx)
 	{
 		nErr = -2;
 		goto $ERROR_END;
 	}
 
 	/** Find the encoder/decoder to be used by its name. */
-	AVCodec* pVideoCodec = NULL;
 	switch (m_nCodecType)
 	{
-	case CODEC_TYPE_ENCODER:
+	case OBJECT_TYPE_ENCODER:
 		{
 			pVideoCodec = avcodec_find_encoder(VideoCodecID);
 		}
 		break;
 
-	case CODEC_TYPE_DECODER:
+	case OBJECT_TYPE_DECODER:
 		{
 			pVideoCodec = avcodec_find_decoder(VideoCodecID);
 		}
@@ -149,7 +151,8 @@ int CCodec::InitVideoCtx(AVPixelFormat PixFmt, AVCodecID VideoCodecID, AVRationa
 		goto $ERROR_END;
 	}
 
-	m_pVideoCtx = avcodec_alloc_context3(pVideoCodec);
+	//m_pVideoCtx = avcodec_alloc_context3(pVideoCodec);
+    m_pVideoCtx = m_pVideoStream->codec;
 	if (NULL == m_pVideoCtx)
 	{
 		nErr = -5;
@@ -160,10 +163,10 @@ int CCodec::InitVideoCtx(AVPixelFormat PixFmt, AVCodecID VideoCodecID, AVRationa
 	* Set the basic encoder parameters.
 	* The input file's sample rate is used to avoid a sample rate conversion.
 	*/
-	m_pVideoCtx->pix_fmt			= PixFmt;
-	m_pVideoCtx->time_base			= TimeBase;
-	m_pVideoCtx->width				= nWidth;
-	m_pVideoCtx->height				= nHeight;
+	m_pVideoCtx->pix_fmt			            = PixFmt;
+	m_pVideoCtx->time_base			            = TimeBase;
+	m_pVideoCtx->width				            = nWidth;
+	m_pVideoCtx->height				            = nHeight;
 	
 	/* emit one intra frame every ten frames
 	* check frame pict_type before passing frame
@@ -171,13 +174,41 @@ int CCodec::InitVideoCtx(AVPixelFormat PixFmt, AVCodecID VideoCodecID, AVRationa
 	* then gop_size is ignored and the output of encoder
 	* will always be I frame irrespective to gop_size
 	*/
-	m_pVideoCtx->gop_size			= nGopSize;
-	m_pVideoCtx->bit_rate			= uiBitrate;
-	m_pVideoCtx->bit_rate_tolerance = uiBitrate;
+	m_pVideoCtx->gop_size			            = nGopSize;
+	m_pVideoCtx->bit_rate			            = uiBitrate;
+	m_pVideoCtx->bit_rate_tolerance             = uiBitrate;
 
-	m_nWidth						= m_pVideoCtx->width;
-	m_nHeight						= m_pVideoCtx->height;
-	m_PixelFmt						= m_pVideoCtx->pix_fmt;
+    m_pVideoCtx->me_method			            = 5;
+    m_pVideoCtx->me_cmp			                = 0;
+    m_pVideoCtx->me_subpel_quality	            = 8;
+    m_pVideoCtx->me_range			            = 0;
+
+    m_pVideoCtx->b_quant_factor	                = 1.25;
+	m_pVideoCtx->b_frame_strategy	            = 0;
+	m_pVideoCtx->i_quant_factor		            = -0.8;
+
+    m_pVideoCtx->keyint_min			            = 25;
+    m_pVideoCtx->refs                           = 1;
+
+    m_pVideoCtx->qcompress			            = 0.6;
+    m_pVideoCtx->qblur                          = 0.5;
+	m_pVideoCtx->qmin				            = 3;
+	m_pVideoCtx->qmax				            = 35;
+	m_pVideoCtx->max_qdiff			            = 4;
+
+    m_pVideoCtx->rc_initial_buffer_occupancy	= 0;
+    m_pVideoCtx->coder_type                     = 0;
+	m_pVideoCtx->min_prediction_order			= -1;
+	m_pVideoCtx->max_prediction_order			= -1;
+	
+    m_pVideoCtx->thread_count			        = 1;
+    m_pVideoCtx->thread_type			        = 3;
+
+    m_pVideoCtx->sub_text_format	            = 1;
+
+	m_nWidth						            = m_pVideoCtx->width;
+	m_nHeight						            = m_pVideoCtx->height;
+	m_PixelFmt						            = m_pVideoCtx->pix_fmt;
 	
 	/**
 	* Some container formats (like MP4) require global headers to be present
@@ -190,8 +221,8 @@ int CCodec::InitVideoCtx(AVPixelFormat PixFmt, AVCodecID VideoCodecID, AVRationa
 	if (0 > nErr)
 	{
 		char szErrLog[AV_ERROR_MAX_STRING_SIZE] = { 0, };
-		fprintf(stderr, "Could not open output codec (error '%s')\n",
-			av_strerror(nErr, szErrLog, AV_ERROR_MAX_STRING_SIZE));
+		TraceLog("Could not open output codec (error '%s')",
+			    av_strerror(nErr, szErrLog, AV_ERROR_MAX_STRING_SIZE));
 		nErr = -6;
 		goto $ERROR_END;
 	}
@@ -199,7 +230,7 @@ int CCodec::InitVideoCtx(AVPixelFormat PixFmt, AVCodecID VideoCodecID, AVRationa
 	nErr = avcodec_parameters_from_context(m_pVideoStream->codecpar, m_pVideoCtx);
 	if (0 > nErr)
 	{
-		fprintf(stderr, "Could not initialize stream parameters\n");
+		TraceLog("Could not initialize stream parameters");
 		nErr = -7;
 		goto $ERROR_END;
 	}
@@ -218,7 +249,8 @@ int CCodec::InitVideoCtx(AVPixelFormat PixFmt, AVCodecID VideoCodecID, AVRationa
 		InitPacket();
 	}
 
-	if (CODEC_TYPE_DECODER == m_nCodecType)
+#ifndef _USE_FILTER_GRAPH
+	if (OBJECT_TYPE_DECODER == m_nCodecType)
 	{
 		if (0 > AllocVideoBuffer())
 		{
@@ -226,6 +258,7 @@ int CCodec::InitVideoCtx(AVPixelFormat PixFmt, AVCodecID VideoCodecID, AVRationa
 			goto $ERROR_END;
 		}
 	}
+#endif
 
 	return 0;
 
@@ -243,7 +276,8 @@ $ERROR_END:
 int CCodec::InitAudioCtx(AVSampleFormat SampleFmt, AVCodecID AudioCodecID,
 						 int nChannelLayout, int nChannels, unsigned int uiSampleRate, unsigned int uiSamples, unsigned int uiBitRate)
 {
-	int nErr = 0;
+	int         nErr        = 0;
+    AVCodec*    pAuidoCodec = NULL;
 
 	if (NULL == m_pFmtCtx)
 	{
@@ -263,16 +297,15 @@ int CCodec::InitAudioCtx(AVSampleFormat SampleFmt, AVCodecID AudioCodecID,
 	}
 
 	/** Find the encoder/decoder to be used by its name. */
-	AVCodec* pAuidoCodec = NULL;
 	switch (m_nCodecType)
 	{
-	case CODEC_TYPE_ENCODER:
+	case OBJECT_TYPE_ENCODER:
 		{
 			pAuidoCodec = avcodec_find_encoder(AudioCodecID);
 		}
 		break;
 
-	case CODEC_TYPE_DECODER:
+	case OBJECT_TYPE_DECODER:
 		{
 			pAuidoCodec = avcodec_find_decoder(AudioCodecID);
 		}
@@ -298,7 +331,8 @@ int CCodec::InitAudioCtx(AVSampleFormat SampleFmt, AVCodecID AudioCodecID,
 		goto $ERROR_END;
 	}
 
-	m_pAudioCtx = avcodec_alloc_context3(pAuidoCodec);
+	//m_pAudioCtx = avcodec_alloc_context3(pAuidoCodec);
+    m_pAudioCtx = m_pAudioStream->codec;
 	if (NULL == m_pAudioCtx)
 	{
 		nErr = -5;
@@ -334,8 +368,8 @@ int CCodec::InitAudioCtx(AVSampleFormat SampleFmt, AVCodecID AudioCodecID,
 	if (0 > nErr)
 	{
 		char szErrLog[AV_ERROR_MAX_STRING_SIZE] = { 0, };
-		fprintf(stderr, "Could not open output codec (error '%s')\n",
-			av_strerror(nErr, szErrLog, AV_ERROR_MAX_STRING_SIZE));
+		TraceLog("Could not open output codec (error '%s')",
+			    av_strerror(nErr, szErrLog, AV_ERROR_MAX_STRING_SIZE));
 		nErr = -6;
 		goto $ERROR_END;
 	}
@@ -343,7 +377,7 @@ int CCodec::InitAudioCtx(AVSampleFormat SampleFmt, AVCodecID AudioCodecID,
 	nErr = avcodec_parameters_from_context(m_pAudioStream->codecpar, m_pAudioCtx);
 	if (0 > nErr)
 	{
-		fprintf(stderr, "Could not initialize stream parameters\n");
+		TraceLog("Could not initialize stream parameters\n");
 		nErr = -7;
 		goto $ERROR_END;
 	}
@@ -375,11 +409,41 @@ $ERROR_END:
 }
 
 
+AVCodecContext* CCodec::GetCodecCtx(enum AVMediaType Type)
+{
+    AVCodecContext* pCodecCtx = NULL;
+
+    switch (Type)
+    {
+    case AVMEDIA_TYPE_VIDEO:
+        {
+            pCodecCtx = m_pVideoCtx;
+        }
+        break;
+
+    case AVMEDIA_TYPE_AUDIO:
+        {
+            pCodecCtx = m_pAudioCtx;
+        }
+        break;
+
+    default:
+        break;
+    }
+
+    return pCodecCtx;
+}
+
+
 void CCodec::CtxCleanUp()
 {
-	avcodec_free_context(&m_pVideoCtx);
-	avcodec_free_context(&m_pAudioCtx);
-	avformat_close_input(&m_pFmtCtx);
+    avcodec_close(m_pVideoCtx);
+    avcodec_close(m_pAudioCtx);
+
+	//avcodec_free_context(&m_pVideoCtx);
+	//avcodec_free_context(&m_pAudioCtx);
+
+    avformat_close_input(&m_pFmtCtx);
 }
 
 
@@ -439,6 +503,13 @@ int64_t	CCodec::ScalingVideo(int nSrcWidth, int nSrcHeight, AVPixelFormat AvSrcP
 		return -6;
 	}
 	memcpy(ppInData[0], pSrcData, llRet);
+
+	// If src and dst's data are same,
+	if ((nSrcWidth == nDstWidth) && (nSrcHeight == nDstHeight) && (AvSrcPixFmt == AvDstPixFmt))
+	{
+		*ppDstData = ppInData[0];
+		return llRet;
+	}
 
 	llRet = av_image_alloc(ppOutData, DstLineSize, nDstWidth, nDstHeight, AvDstPixFmt, 1);
 	if (0 > llRet)
@@ -501,19 +572,19 @@ int64_t	CCodec::ResamplingAudio(AVSampleFormat AvSrcSampleFmt, int nSrcChannelLa
 	}
 
 	/* set options */
-	av_opt_set_int(m_pSwrCtx,			"in_channel_layout",	nSrcChannelLayout, 0);
-	av_opt_set_int(m_pSwrCtx,			"in_sample_rate",		nSrcSampleRate, 0);
-	av_opt_set_sample_fmt(m_pSwrCtx,	"in_sample_fmt",		AvSrcSampleFmt, 0);
+	av_opt_set_int(m_pSwrCtx,			"in_channel_layout",	nSrcChannelLayout,  0);
+	av_opt_set_int(m_pSwrCtx,			"in_sample_rate",		nSrcSampleRate,     0);
+	av_opt_set_sample_fmt(m_pSwrCtx,	"in_sample_fmt",		AvSrcSampleFmt,     0);
 
-	av_opt_set_int(m_pSwrCtx,			"out_channel_layout",	nDstChannelLayout, 0);
-	av_opt_set_int(m_pSwrCtx,			"out_sample_rate",		nDstSampleRate, 0);
-	av_opt_set_sample_fmt(m_pSwrCtx,	"out_sample_fmt",		AvDstSampleFmt, 0);
+	av_opt_set_int(m_pSwrCtx,			"out_channel_layout",	nDstChannelLayout,  0);
+	av_opt_set_int(m_pSwrCtx,			"out_sample_rate",		nDstSampleRate,     0);
+	av_opt_set_sample_fmt(m_pSwrCtx,	"out_sample_fmt",		AvDstSampleFmt,     0);
 
 	/* initialize the resampling context */
 	llRet = swr_init(m_pSwrCtx);
 	if (0 > llRet)
 	{
-		fprintf(stderr, "Failed to initialize the resampling context\n");
+		TraceLog("Failed to initialize the resampling context");
 		llRet = -5;
 		goto $END;
 	}
@@ -555,7 +626,7 @@ int64_t	CCodec::ResamplingAudio(AVSampleFormat AvSrcSampleFmt, int nSrcChannelLa
 	nConvertRet = swr_convert(m_pSwrCtx, ppOutData, nDstSamples, (const uint8_t **)ppInData, nSrcSamples);
 	if (0 > nConvertRet)
 	{
-		fprintf(stderr, "Error while converting\n");
+		TraceLog("Error while converting");
 		llRet = -9;
 		goto $END;
 	}
@@ -563,7 +634,7 @@ int64_t	CCodec::ResamplingAudio(AVSampleFormat AvSrcSampleFmt, int nSrcChannelLa
 	llRet = av_samples_get_buffer_size(&nDstLineSize, nDstChannels, nConvertRet, AvDstSampleFmt, 1);
 	if (0 > llRet)
 	{
-		fprintf(stderr, "Could not get sample buffer size\n");
+		TraceLog("Could not get sample buffer size");
 		llRet = -10;
 		goto $END;
 	}

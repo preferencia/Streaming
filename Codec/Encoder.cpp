@@ -1,26 +1,24 @@
 #include "stdafx.h"
 #include "Encoder.h"
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 #pragma warning(disable:4996)
 #endif
 
 
 CEncoder::CEncoder()
 {
-	m_nCodecType		= CODEC_TYPE_ENCODER;
+	m_nCodecType				= OBJECT_TYPE_ENCODER;
 
-	m_pVideoFrame		= NULL;
-	m_pAudioFrame		= NULL;
+	m_pVideoFrame				= NULL;
+	m_pAudioFrame				= NULL;
 
-	m_AVSrcPixFmt		= AV_PIX_FMT_NONE;
-	m_nSrcWidth			= 0;
-	m_nSrcHeight		= 0;
+	m_AVSrcPixFmt				= AV_PIX_FMT_NONE;
+	m_nSrcWidth					= 0;
+	m_nSrcHeight				= 0;
 
-	m_pFAACEncHandle	= NULL;
-
-	m_ulSamples			= 0;
-	m_ulMaxOutBytes		= 0;
+	m_pObject					= NULL;
+	m_pWriteEncFrameCallback	= NULL;
 }
 
 
@@ -40,24 +38,85 @@ CEncoder::~CEncoder()
 }
 
 
+void CEncoder::SetFramePtsData(int nStreamIndex, 
+                               int64_t llPts, int64_t llPktPts, int64_t llPktDts)
+{
+    AVFrame* pFrame = NULL;
+
+    switch (nStreamIndex)
+    {
+    case AVMEDIA_TYPE_VIDEO:
+        pFrame = m_pVideoFrame;
+        break;
+
+    case AVMEDIA_TYPE_AUDIO:
+        pFrame = m_pAudioFrame;
+        break;
+
+    default:
+        break;
+    }
+
+    if (NULL == pFrame)
+    {
+        return;
+    }
+
+    pFrame->pts       = llPts;
+    pFrame->pkt_pts   = llPktPts;
+    pFrame->pkt_dts   = llPktDts;
+}
+
+
+void CEncoder::GetFramePtsData(int nStreamIndex, 
+                               int64_t& llPts, int64_t& llPktPts, int64_t& llPktDts)
+{
+    AVFrame* pFrame = NULL;
+
+    switch (nStreamIndex)
+    {
+    case AVMEDIA_TYPE_VIDEO:
+        pFrame = m_pVideoFrame;
+        break;
+
+    case AVMEDIA_TYPE_AUDIO:
+        pFrame = m_pAudioFrame;
+        break;
+
+    default:
+        break;
+    }
+
+    if (NULL == pFrame)
+    {
+        return;
+    }
+
+    llPts       = pFrame->pts;
+    llPktPts    = pFrame->pkt_pts;
+    llPktDts    = pFrame->pkt_dts;
+}
+
+
+void CEncoder::SetCallbackProc(void* pObject, WriteEncFrameCallback pWriteEncFrameCallback)
+{
+	m_pObject					= pObject;
+	m_pWriteEncFrameCallback	= pWriteEncFrameCallback;
+}
+
+
 void CEncoder::SetVideoSrcInfo(AVPixelFormat AVSrcPixFmt, int nSrcWidth, int nSrcHeight)
 {
-	m_AVSrcPixFmt		= AVSrcPixFmt;
-	m_nSrcWidth			= nSrcWidth;
-	m_nSrcHeight		= nSrcHeight;
+	m_AVSrcPixFmt				= AVSrcPixFmt;
+	m_nSrcWidth					= nSrcWidth;
+	m_nSrcHeight				= nSrcHeight;
 }
 
 
 int64_t CEncoder::Encode(int nStreamIndex,
 						 unsigned char* pSrcData, unsigned int uiSrcDataSize,
-						 unsigned char** ppEncData, unsigned int& uiEncDataSize,
-					 	 bool bEncodeDelayedFrame /* = false */)
+						 unsigned char** ppEncData, unsigned int& uiEncDataSize)
 {
-	if (true == bEncodeDelayedFrame)
-	{
-		return EncodeDelayedFrame(nStreamIndex, ppEncData, uiEncDataSize);
-	}
-
 	switch (nStreamIndex)
 	{
 	case AVMEDIA_TYPE_VIDEO:
@@ -72,11 +131,109 @@ int64_t CEncoder::Encode(int nStreamIndex,
 		}
 		break;
 
-	default:
+	case AVMEDIA_TYPE_NB + AVMEDIA_TYPE_VIDEO:
+	case AVMEDIA_TYPE_NB + AVMEDIA_TYPE_AUDIO:
 		{
-
+			return EncodeDelayedFrame(nStreamIndex - AVMEDIA_TYPE_NB, ppEncData, uiEncDataSize);
 		}
 		break;
+
+	default:
+		{
+		}
+		break;
+	}
+
+	return 0;
+}
+
+int64_t CEncoder::Encode(int nStreamIndex, AVFrame* pFrame,
+						 unsigned char** ppEncData, unsigned int& uiEncDataSize)
+{
+	if (NULL == pFrame)
+	{
+		return -1;
+	}
+
+	if ((NULL == ppEncData) || (NULL != *ppEncData))
+	{
+		return -2;
+	}
+
+	uint8_t**		pOrgData = NULL;
+	int				pVideoDstLineSize[_DEC_PLANE_SIZE] = { 0, };
+	uint8_t*		pVideoDstData[_DEC_PLANE_SIZE] = { 0, };
+	unsigned int	uiDataSize = 0;
+	int				nGotOutput = 0;
+
+	if (nStreamIndex == AVMEDIA_TYPE_VIDEO)
+	{
+		pOrgData = (uint8_t**)pFrame->data;
+
+		uiDataSize = av_image_alloc(pVideoDstData, pVideoDstLineSize, m_nSrcWidth, m_nSrcHeight, m_AVSrcPixFmt, 1);
+
+		av_image_copy(pVideoDstData, pVideoDstLineSize, (const uint8_t**)(pFrame->data), pFrame->linesize,
+					  m_AVSrcPixFmt, m_nSrcWidth, m_nSrcHeight);
+
+		pFrame->data[0] = pVideoDstData[0];
+	}
+	else if (nStreamIndex == AVMEDIA_TYPE_AUDIO)
+	{
+		uiDataSize = pFrame->nb_samples * av_get_bytes_per_sample((AVSampleFormat)pFrame->format);
+	}
+
+	if (0 < uiDataSize)
+	{		
+		// initalize packet to remove prev data
+		InitPacket();
+
+		switch (nStreamIndex)
+		{
+		case AVMEDIA_TYPE_VIDEO:
+		{
+			// scaling
+			unsigned char*	pScalingData = NULL;
+			int				nDstWidth = m_pVideoCtx->width;
+			int				nDstHeight = m_pVideoCtx->height;
+			AVPixelFormat	AVDstPixFmt = m_pVideoCtx->pix_fmt;
+			int64_t			llScalingDataSize = ScalingVideo(m_nSrcWidth, m_nSrcHeight, m_AVSrcPixFmt, pFrame->data[0],
+				nDstWidth, nDstHeight, AVDstPixFmt, &pScalingData);
+
+			if ((0 >= llScalingDataSize) || (NULL == pScalingData))
+			{
+				return -3;
+			}
+
+			pFrame->data[0] = pScalingData;
+
+			avcodec_encode_video2(m_pVideoCtx, &m_Pkt, pFrame, &nGotOutput);
+
+			av_freep(&pScalingData);
+			pScalingData = NULL;
+		}
+		break;
+
+		case AVMEDIA_TYPE_AUDIO:
+		{
+			avcodec_encode_audio2(m_pVideoCtx, &m_Pkt, pFrame, &nGotOutput);
+		}
+		break;
+
+		default:
+			break;
+		}
+
+		uiEncDataSize = PacketToBuffer(nStreamIndex, nGotOutput, ppEncData);
+	}
+
+	if (nStreamIndex == AVMEDIA_TYPE_VIDEO)
+	{
+		pFrame->data[0] = *pOrgData;
+	}
+
+	if (NULL != pVideoDstData[0])
+	{
+		av_free(pVideoDstData[0]);
 	}
 
 	return 0;
@@ -96,7 +253,7 @@ int64_t CEncoder::EncodeVideo(unsigned char* pSrcData, unsigned int uiSrcDataSiz
 		return -2;
 	}
 
-	// swcaling
+	// scaling
 	unsigned char*	pScalingData		= NULL;
 	int				nDstWidth			= m_pVideoCtx->width;
 	int				nDstHeight			= m_pVideoCtx->height;
@@ -126,12 +283,13 @@ int64_t CEncoder::EncodeVideo(unsigned char* pSrcData, unsigned int uiSrcDataSiz
 		llRet = -4;
 		goto $REMOVE_SCALE_DATA;
 	}
+
 	//memcpy(m_pVideoFrame->data[0], pSrcData, uiSrcDataSize);
 	memcpy(m_pVideoFrame->data[0], pScalingData, llScalingDataSize);
 
 	// initalize packet to remove prev data
 	InitPacket();
-	
+
 	llRet = avcodec_encode_video2(m_pVideoCtx, &m_Pkt, m_pVideoFrame, &nGotOutput);
 	if (0 > llRet)
 	{
@@ -139,14 +297,9 @@ int64_t CEncoder::EncodeVideo(unsigned char* pSrcData, unsigned int uiSrcDataSiz
 		goto $REMOVE_FRAME_DATA;
 	}
 
-	if (1 == nGotOutput)
-	{
-		*ppEncData		= m_Pkt.data;
-		uiEncDataSize	= m_Pkt.size;
-		av_packet_unref(&m_Pkt);
-	}
+	uiEncDataSize = PacketToBuffer(AVMEDIA_TYPE_VIDEO, nGotOutput, ppEncData);
 
-	m_pVideoFrame->pts++;
+	++m_pVideoFrame->pts;
 
 $REMOVE_FRAME_DATA:
 	av_freep(&m_pVideoFrame->data[0]);
@@ -201,7 +354,7 @@ int64_t CEncoder::EncodeAudio(unsigned char* pSrcData, unsigned int uiSrcDataSiz
 									(const uint8_t*)pAudioData, uiAudioDataSize, 0);
 	if (0 > llRet) 
 	{
-		fprintf(stderr, "Could not setup audio frame\n");
+		TraceLog("Could not setup audio frame");
 		return -5;
 	}
 	memset(pAudioData, 0, uiAudioDataSize);
@@ -216,12 +369,9 @@ int64_t CEncoder::EncodeAudio(unsigned char* pSrcData, unsigned int uiSrcDataSiz
 		return -6;
 	}
 
-	if (1 == nGotOutput)
-	{
-		*ppEncData		= m_Pkt.data;
-		uiEncDataSize	= m_Pkt.size;
-		av_packet_unref(&m_Pkt);
-	}
+	uiEncDataSize = PacketToBuffer(AVMEDIA_TYPE_AUDIO, nGotOutput, ppEncData);
+
+	++m_pAudioFrame->pts;
 
 	av_freep(&pAudioData);
 
@@ -261,14 +411,33 @@ int64_t	CEncoder::EncodeDelayedFrame(int nStreamIndex, unsigned char** ppEncData
 		return -1;
 	}
 
-	if (1 == nGotOutput)
-	{
-		*ppEncData		= m_Pkt.data;
-		uiEncDataSize	= m_Pkt.size;
-		av_packet_unref(&m_Pkt);
-	}
+	uiEncDataSize = PacketToBuffer(nStreamIndex, nGotOutput, ppEncData);
 
 	return 0;
+}
+
+
+int64_t CEncoder::PacketToBuffer(int nStreamIndex, int nGotOutput, unsigned char** ppEncData)
+{
+	if ((0 >= nGotOutput) || (NULL == ppEncData) || (NULL != *ppEncData))
+	{
+		return 0;
+	}
+
+	int64_t llRet	= m_Pkt.size;
+	*ppEncData		= new unsigned char[m_Pkt.size];
+	memcpy(*ppEncData, m_Pkt.data, m_Pkt.size);
+
+	if ((NULL != m_pObject) && (NULL != m_pWriteEncFrameCallback))
+	{
+		/* prepare packet for muxing */
+		m_Pkt.stream_index = nStreamIndex;
+		m_pWriteEncFrameCallback(m_pObject, &m_Pkt);
+	}
+
+	av_packet_unref(&m_Pkt);
+
+	return llRet;
 }
 
 
@@ -280,11 +449,13 @@ int CEncoder::InitFrame()
 		m_pVideoFrame = av_frame_alloc();
 		if (NULL == m_pVideoFrame)
 		{
-			fprintf(stderr, "Could not allocate video frame\n");
+			TraceLog("Could not allocate video frame");
 			return -1;
 		}
 
-		m_pVideoFrame->pts = 0;
+		m_pVideoFrame->pts		= 0;
+		m_pVideoFrame->pkt_pts	= 0;
+		m_pVideoFrame->pkt_dts	= 0;
 	}	
 
 	// alloc audio frame
@@ -293,9 +464,13 @@ int CEncoder::InitFrame()
 		m_pAudioFrame = av_frame_alloc();
 		if (NULL == m_pAudioFrame)
 		{
-			fprintf(stderr, "Could not allocate audio frame\n");
+			TraceLog("Could not allocate audio frame");
 			return -2;
 		}
+
+		m_pAudioFrame->pts		= 0;
+		m_pAudioFrame->pkt_pts	= 0;
+		m_pAudioFrame->pkt_dts	= 0;
 	}	
 
 	m_bInitFrame = true;
