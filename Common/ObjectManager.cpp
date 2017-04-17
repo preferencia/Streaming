@@ -83,6 +83,7 @@ void CObjectManager::DestroyObject(void** ppOjbect, int nObjectType)
 		default:
 			break;
 		}
-		
+
+        *ppOjbect = NULL;
     }	
 }

@@ -32,7 +32,8 @@ CSocketThread::~CSocketThread(void)
 {
 	if (0 < m_ConnectSocketMap.size())
 	{
-		for (m_ConnectSocketMapIt = m_ConnectSocketMap.begin(); m_ConnectSocketMapIt != m_ConnectSocketMap.end(); ++m_ConnectSocketMapIt)
+		m_ConnectSocketMapIt = m_ConnectSocketMap.begin();
+		while (m_ConnectSocketMapIt != m_ConnectSocketMap.end())
 		{
 			CConnectSocket* pConnectSocket = m_ConnectSocketMapIt->second;
 			SAFE_DELETE(pConnectSocket);
@@ -114,15 +115,16 @@ void CSocketThread::StopSocketThread()
 
     if (0 < m_SendDataQueue.size())
 	{
-		for (m_SendDataQueueIt = m_SendDataQueue.begin(); m_SendDataQueueIt != m_SendDataQueue.end(); ++m_SendDataQueueIt)
+		m_SendDataQueueIt = m_SendDataQueue.begin();
+		while (m_SendDataQueueIt != m_SendDataQueue.end())
 		{
 			SendData* pSendData = (SendData*)*m_SendDataQueueIt;
 			if (NULL != pSendData)
 			{
 				SAFE_DELETE_ARRAY(pSendData->pData);
-				SAFE_DELETE(pSendData);
-				m_SendDataQueueIt = m_SendDataQueue.erase(m_SendDataQueueIt);
+				SAFE_DELETE(pSendData);				
 			}
+			m_SendDataQueueIt = m_SendDataQueue.erase(m_SendDataQueueIt);
 		}
 	}
 
