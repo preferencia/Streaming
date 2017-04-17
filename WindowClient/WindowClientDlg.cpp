@@ -123,7 +123,7 @@ CWindowClientDlg::~CWindowClientDlg()
         {
             char* pFrameData = *m_FrameDataListIt;
             SAFE_DELETE_ARRAY(pFrameData);
-            m_FrameDataListIt = m_FrameDataList.erase(m_FrameDataListIt);
+            m_FrameDataList.erase(m_FrameDataListIt++);
         }
     }
 }

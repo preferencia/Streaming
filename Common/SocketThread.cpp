@@ -37,7 +37,7 @@ CSocketThread::~CSocketThread(void)
 		{
 			CConnectSocket* pConnectSocket = m_ConnectSocketMapIt->second;
 			SAFE_DELETE(pConnectSocket);
-			m_ConnectSocketMapIt = m_ConnectSocketMap.erase(m_ConnectSocketMapIt);
+			m_ConnectSocketMap.erase(m_ConnectSocketMapIt++);
 		}
 	}
 }
@@ -124,7 +124,7 @@ void CSocketThread::StopSocketThread()
 				SAFE_DELETE_ARRAY(pSendData->pData);
 				SAFE_DELETE(pSendData);				
 			}
-			m_SendDataQueueIt = m_SendDataQueue.erase(m_SendDataQueueIt);
+			m_SendDataQueue.erase(m_SendDataQueueIt++);
 		}
 	}
 
