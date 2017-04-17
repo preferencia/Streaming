@@ -22,7 +22,8 @@ CListenSocket::~CListenSocket()
 
 	if (0 < m_SessionThreadMap.size())
 	{
-		for (m_SessionThreadMapIt = m_SessionThreadMap.begin(); m_SessionThreadMapIt != m_SessionThreadMap.end(); ++m_SessionThreadMapIt)
+		m_SessionThreadMapIt = m_SessionThreadMap.begin();
+		while (m_SessionThreadMapIt != m_SessionThreadMap.end())
 		{
 			CSessionThread* pSessionThread = m_SessionThreadMapIt->second;
 			SAFE_DELETE(pSessionThread);
