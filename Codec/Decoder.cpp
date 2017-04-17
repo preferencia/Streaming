@@ -171,10 +171,10 @@ int64_t CDecoder::DecodeCachedData(int nCached)
         }		
     } while ((0 == nCached) ? (m_Pkt.size > 0) : nGotFrame);
 
-	if (1 == nGotFrame)
-	{
-		av_packet_unref(&OrgPkt);
-	}
+    if (1 <= nGotFrame)
+    {
+	    av_packet_unref(&OrgPkt);
+    }
 
     return llRet;
 }
@@ -212,10 +212,10 @@ int64_t CDecoder::DecodeVideo(unsigned char* pSrcData, unsigned int uiSrcDataSiz
 		m_Pkt.size -= llRet;
 	} while (m_Pkt.size > 0);
 
-	if (1 == nGotFrame)
-	{
-		av_packet_unref(&OrgPkt);
-	}
+    if (1 <= nGotFrame)
+    {
+	    av_packet_unref(&OrgPkt);
+    }
 
 	// YUV420 to RGB32 (client)
 	unsigned char*	pScalingData		= NULL;
@@ -270,10 +270,10 @@ int64_t CDecoder::DecodeAudio(unsigned char* pSrcData, unsigned int uiSrcDataSiz
 		m_Pkt.size -= llRet;
 	} while (m_Pkt.size > 0);
 
-	if (1 == nGotFrame)
-	{
-		av_packet_unref(&OrgPkt);
-	}
+    if (1 <= nGotFrame)
+    {
+        av_packet_unref(&OrgPkt);
+    }
 
 	// resampling (FLTP AAC to 16bit PCM)
 	AVSampleFormat	AVSrcSampleFmt		= m_AVSrcSampleFmt;
