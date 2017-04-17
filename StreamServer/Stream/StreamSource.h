@@ -7,6 +7,9 @@
 
 typedef int (*StreamCallback)(void*, int, UINT, void*);
 
+typedef list<void*>             DecodeDataList;
+typedef list<void*>::iterator   DecodeDataListIt;
+
 class CStreamSource
 {
 public:
@@ -124,5 +127,8 @@ private:
 	bool                m_bRunDecodeThread;
     bool                m_bRunEncodeThread;
 	bool				m_bPauseDecodeThread;
+
+    DecodeDataList      m_DecodedDataList;
+    DecodeDataListIt    m_DecodedDataListIt;
 };
 

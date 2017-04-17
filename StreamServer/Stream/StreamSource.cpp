@@ -65,11 +65,14 @@ CStreamSource::CStreamSource()
 	m_bRunDecodeThread		= false;
     m_bRunEncodeThread		= false;
 	m_bPauseDecodeThread	= false;
+
+    m_DecodedDataList.clear();
 }
 
 
 CStreamSource::~CStreamSource()
 {
+    Stop();
 	ObjectCleanUp();
 
 	SAFE_DELETE_ARRAY(m_pszInputFileName);

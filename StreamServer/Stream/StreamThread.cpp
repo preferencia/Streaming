@@ -9,6 +9,7 @@ CStreamThread::CStreamThread()
 
 CStreamThread::~CStreamThread()
 {
+    TraceLog("Stream Source = 0x%x", m_pStreamSource);
 	CStreamSource* pStreamSource = (CStreamSource*)m_pStreamSource;
 	SAFE_DELETE(pStreamSource);
 }
