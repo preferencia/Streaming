@@ -36,9 +36,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="StreamServer.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
     <ClCompile Include="stdafx.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
@@ -57,9 +54,6 @@
     <ClCompile Include="..\Codec\Codec.cpp">
       <Filter>Codec</Filter>
     </ClCompile>
-    <ClCompile Include="..\Codec\CodecManager.cpp">
-      <Filter>Codec</Filter>
-    </ClCompile>
     <ClCompile Include="..\Codec\Decoder.cpp">
       <Filter>Codec</Filter>
     </ClCompile>
@@ -69,7 +63,7 @@
     <ClCompile Include="..\Multiplex\Demuxer.cpp">
       <Filter>Multiplex</Filter>
     </ClCompile>
-    <ClCompile Include="Network\Listen\WinListenSocket.cpp">
+    <ClCompile Include="Network\Listen\ListenSocket.cpp">
       <Filter>Network\Listen</Filter>
     </ClCompile>
     <ClCompile Include="Network\Session\SessionSocket.cpp">
@@ -77,6 +71,15 @@
     </ClCompile>
     <ClCompile Include="Network\Session\SessionThread.cpp">
       <Filter>Network\Session</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\ObjectManager.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Multiplex\Muxer.cpp">
+      <Filter>Multiplex</Filter>
+    </ClCompile>
+    <ClCompile Include="StreamServer.cpp">
+      <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -107,12 +110,6 @@
     <ClInclude Include="..\Codec\Codec.h">
       <Filter>Codec</Filter>
     </ClInclude>
-    <ClInclude Include="..\Codec\CodecManager.h">
-      <Filter>Codec</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Codec\Common.h">
-      <Filter>Codec</Filter>
-    </ClInclude>
     <ClInclude Include="..\Codec\Decoder.h">
       <Filter>Codec</Filter>
     </ClInclude>
@@ -125,14 +122,23 @@
     <ClInclude Include="Network\Listen\ListenSocket.h">
       <Filter>Network\Listen</Filter>
     </ClInclude>
-    <ClInclude Include="Network\Listen\WinListenSocket.h">
-      <Filter>Network\Listen</Filter>
-    </ClInclude>
     <ClInclude Include="Network\Session\SessionSocket.h">
       <Filter>Network\Session</Filter>
     </ClInclude>
     <ClInclude Include="Network\Session\SessionThread.h">
       <Filter>Network\Session</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\ObjectManager.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\Common.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Multiplex\Mux.h">
+      <Filter>Multiplex</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Multiplex\Muxer.h">
+      <Filter>Multiplex</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

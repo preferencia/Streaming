@@ -2,9 +2,8 @@
 //
 
 #include "stdafx.h"
+#include "Common.h"
 #include "ListenSocket.h"
-
-static bool ErrorHandling(const char* pszFmt, ...);
 
 int main(int argc, char* argv[])
 {
@@ -14,6 +13,13 @@ int main(int argc, char* argv[])
 		return -1;
 	}
 
+	OpenLogFile("StreamServer");
+
+	/* register all formats and codecs */
+	av_register_all();
+	/* register all filters */
+	avfilter_register_all();
+
 	CListenSocket* pListenSocket = new CListenSocket();
 	if (NULL != pListenSocket)
 	{
@@ -21,18 +27,27 @@ int main(int argc, char* argv[])
 		{
 			if (true == pListenSocket->Listen())
 			{
-				cout << "If want to quit, press q or Q and Enter : ";
+				TraceLog("If want to quit, press q or Q and Enter : ");
+
 				while (1)
 				{
 					int nInput = getchar();
 					if (('q' == nInput) || ('Q' == nInput))
 					{
+						TraceLog("Enter quit signal[%c]", nInput);
+
+						pListenSocket->Close();
+#ifdef _WIN32
+					    Sleep(10);
+#else
+					    usleep(10000);
+#endif
 						break;
 					}
-#ifdef _WINDOWS
-					Sleep(1);
+#ifdef _WIN32
+					Sleep(10);
 #else
-					usleep(1000);
+					usleep(10000);
 #endif
 				}
 			}			
@@ -41,70 +56,7 @@ int main(int argc, char* argv[])
 		SAFE_DELETE(pListenSocket);
 	}
 
-/*
-#ifdef _WINDOWS
-	WSADATA		wsaData			= {0, };
-	SOCKET		hServSock		= NULL;
-	SOCKET		hClientSock		= NULL;
-#else
-	int			hServSock		= 0;
-	int			hClientSock		= 0;
-#endif
+	CloseLogFile();
 
-	SOCKADDR_IN	ServAddr		= {0, };
-	SOCKADDR_IN	ClientAddr		= {0, };
-	socklen_t	nClientAddrSize	= sizeof(ClientAddr);
-
-	char		SendBuf[_DEC_MAX_BUF_SIZE]	= {0, };
-	char*		pszSendMsg					= (char*)"Hello World!";
-	memcpy(SendBuf, pszSendMsg, strlen(pszSendMsg));
-
-#ifdef _WINDOWS
-	if (0 != WSAStartup(MAKEWORD(2, 2), &wsaData))
-	{
-		ErrorHandling("WSAStartup() error!");
-	}
-#endif
-
-	hServSock	= socket(PF_INET, SOCK_STREAM, 0);
-	if (INVALID_SOCKET == hServSock)
-	{
-		ErrorHandling("socket() error!");
-	}
-
-	ServAddr.sin_family				= AF_INET;
-	ServAddr.sin_addr.s_addr		= htonl(INADDR_ANY);
-	ServAddr.sin_port				= htons(atoi(argv[1]));
-
-	if (SOCKET_ERROR == bind(hServSock, (SOCKADDR*)&ServAddr, sizeof(ServAddr)))
-	{
-		ErrorHandling("bind() error!");
-	}
-
-	if (SOCKET_ERROR == listen(hServSock, 5))
-	{
-		ErrorHandling("listen() error!");
-	}
-
-	hClientSock = accept(hServSock, (SOCKADDR*)&ClientAddr, &nClientAddrSize);
-	if (INVALID_SOCKET == hClientSock)
-	{
-		ErrorHandling("accept() error!");
-	}
-
-#ifdef _WINDOWS
-	send(hClientSock, SendBuf, sizeof(SendBuf), 0);
-	closesocket(hClientSock);
-	closesocket(hServSock);
-#else
-	write(hClientSock, SendBuf, sizeof(SendBuf));
-	close(hClientSock);
-	close(hServSock);
-#endif
-
-#ifdef _WINDOWS
-	WSACleanup();
-#endif
-*/
 	return 0;
 }
