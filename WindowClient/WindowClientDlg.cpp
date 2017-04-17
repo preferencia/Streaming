@@ -59,10 +59,10 @@ CWindowClientDlg::CWindowClientDlg(CWnd* pParent /*=NULL*/)
 
 	m_pClientThread			= NULL;
 
-	m_pCodecManager			= NULL;
+	m_pObjectManager			= NULL;
 	m_pDecoder				= NULL;
 
-	m_fpVideoScalingFile	= NULL;
+	//m_fpVideoScalingFile	= NULL;
 	m_fpAudioResampleFile	= NULL;
 
 	m_bVideoPlayRunning		= false;
@@ -72,25 +72,43 @@ CWindowClientDlg::CWindowClientDlg(CWnd* pParent /*=NULL*/)
 	m_nScreenWidth			= 0;
 	m_nScreenHeight			= 0;
 
+    m_hFrameDataListMutex   = NULL;
+    m_hDecodeThread         = NULL;
+    m_bRunDecodeThread      = false;
+
 	memset(&m_VsRawInfo, 0, sizeof(m_VsRawInfo));
+    m_FrameDataList.clear();
 }
 
 CWindowClientDlg::~CWindowClientDlg()
 {
-	if (true == m_bVideoPlayRunning)
+    if (true == m_bVideoPlayRunning)
 	{
 		OnBnClickedButtonStop();
 	}
 
-	m_pCodecManager->DestroyCodec(&m_pDecoder);
-	SAFE_DELETE(m_pCodecManager);
+    if (NULL != m_hFrameDataListMutex)
+    {
+        CloseHandle(m_hFrameDataListMutex);
+        m_hFrameDataListMutex = NULL;
+    }
+
+    if (NULL != m_hDecodeThread)
+    {
+        WaitForSingleObject(m_hDecodeThread, INFINITE);
+    }
+
+    DestroyScreenWnd();
+
+	m_pObjectManager->DestroyObject((void**)&m_pDecoder, OBJECT_TYPE_DECODER);
+	SAFE_DELETE(m_pObjectManager);
 	SAFE_DELETE(m_pClientThread);
 
-	if (NULL != m_fpVideoScalingFile)
-	{
-		fclose(m_fpVideoScalingFile);
-		m_fpVideoScalingFile = NULL;
-	}
+	//if (NULL != m_fpVideoScalingFile)
+	//{
+	//	fclose(m_fpVideoScalingFile);
+	//	m_fpVideoScalingFile = NULL;
+	//}
 
 	if (NULL != m_fpAudioResampleFile)
 	{
@@ -98,7 +116,16 @@ CWindowClientDlg::~CWindowClientDlg()
 		m_fpAudioResampleFile = NULL;
 	}
 
-	DestroyScreenWnd();
+    if (0 < m_FrameDataList.size())
+    {
+        m_FrameDataListIt = m_FrameDataList.begin();
+        while (m_FrameDataListIt != m_FrameDataList.end())
+        {
+            char* pFrameData = *m_FrameDataListIt;
+            SAFE_DELETE_ARRAY(pFrameData);
+            m_FrameDataListIt = m_FrameDataList.erase(m_FrameDataListIt);
+        }
+    }
 }
 
 void CWindowClientDlg::DoDataExchange(CDataExchange* pDX)
@@ -157,7 +184,16 @@ BOOL CWindowClientDlg::OnInitDialog()
 
 	// TODO: 여기에 추가 초기화 작업을 추가합니다.
 	SetDlgItemText(IDC_IPADDRESS_SERVER, _T("127.0.0.1"));
-	SetDlgItemText(IDC_EDIT_PORT, _T("12345"));
+	SetDlgItemText(IDC_EDIT_PORT, _T("23456"));
+
+    /* register all formats and codecs */
+	av_register_all();
+
+ //   // Test
+	//m_VsRawInfo.uiChannels = 2;
+	//m_VsRawInfo.uiSampleRate = 44100;
+	//CreateScreenWnd(640, 360);
+ //   m_pScreenWnd->TestAudio("Test_resample.pcm");
 
 	return TRUE;  // 포커스를 컨트롤에 설정하지 않으면 TRUE를 반환합니다.
 }
@@ -222,6 +258,8 @@ int CWindowClientDlg::RecvProcCallback(	void*			pObject,
 		return -1;
 	}
 
+    TraceLog("CWindowClientDlg::RecvProcCallback - SVC = %d", uiSvcCode);
+
 	CWindowClientDlg* pThis = (CWindowClientDlg*)pObject;
 
 	switch (uiSvcCode)
@@ -246,30 +284,13 @@ int CWindowClientDlg::RecvProcCallback(	void*			pObject,
 
 	case SVC_FRAME_DATA:
 		{
-			pThis->ProcFrameData(pData);
+            pThis->PushFrameData(uiDataLen, pData);
 		}
 		break;
 
 	case SVC_FILE_CLOSE:
 		{
-			pThis->m_bVideoPlayRunning	= false;
-			pThis->m_bPause				= false;
-			pThis->GetDlgItem(IDC_BUTTON_PLAY)->SetWindowText(_T("Play"));
-			pThis->GetDlgItem(IDC_BUTTON_STOP)->EnableWindow(FALSE);
-
-			if (NULL != pThis->m_fpVideoScalingFile)
-			{
-				fclose(pThis->m_fpVideoScalingFile);
-				pThis->m_fpVideoScalingFile = NULL;
-			}
-
-			if (NULL != pThis->m_fpAudioResampleFile)
-			{
-				fclose(pThis->m_fpAudioResampleFile);
-				pThis->m_fpAudioResampleFile = NULL;
-			}
-
-			pThis->m_pScreenWnd->ShowWindow(FALSE);
+            pThis->PlayComplete();
 		}
 		break;
 
@@ -350,25 +371,22 @@ int CWindowClientDlg::SetDecoder(char* pData)
 		return -1;
 	}
 
-	/* register all formats and codecs */
-	av_register_all();
-
-	if (NULL == m_pCodecManager)
+	if (NULL == m_pObjectManager)
 	{
-		m_pCodecManager = new CCodecManager;
+        m_pObjectManager = new CObjectManager;
 	}
 
-	if (NULL == m_pCodecManager)
+	if (NULL == m_pObjectManager)
 	{
 		return -2;
 	}
 
 	if (NULL != m_pDecoder)
 	{
-		m_pCodecManager->DestroyCodec(&m_pDecoder);
+		m_pObjectManager->DestroyObject((void**)&m_pDecoder, OBJECT_TYPE_DECODER);
 	}
 
-	if ((0 > m_pCodecManager->CreateCodec(&m_pDecoder, CODEC_TYPE_DECODER)) || (NULL == m_pDecoder))
+	if ((0 > m_pObjectManager->CreateObject((void**)&m_pDecoder, OBJECT_TYPE_DECODER)) || (NULL == m_pDecoder))
 	{
 		return -3;
 	}
@@ -397,13 +415,13 @@ int CWindowClientDlg::SetDecoder(char* pData)
 
 	m_pDecoder->SetStreamIndex(AVMEDIA_TYPE_VIDEO, AVMEDIA_TYPE_AUDIO);
 
-	if (NULL == m_fpVideoScalingFile)
-	{
-		char szVideoScalingFile[MAX_PATH * 2] = { 0, };
-		sprintf(szVideoScalingFile, "%s_scaling_%dx%d.raw", m_StrLastVideoFileName.Left(m_StrLastVideoFileName.GetLength() - 4), pRepData->uiWidth, pRepData->uiHeight);
+	//if (NULL == m_fpVideoScalingFile)
+	//{
+	//	char szVideoScalingFile[MAX_PATH * 2] = { 0, };
+	//	sprintf(szVideoScalingFile, "%s_scaling_%dx%d.raw", m_StrLastVideoFileName.Left(m_StrLastVideoFileName.GetLength() - 4), pRepData->uiWidth, pRepData->uiHeight);
 
-		m_fpVideoScalingFile = fopen(szVideoScalingFile, "wb");
-	}
+	//	m_fpVideoScalingFile = fopen(szVideoScalingFile, "wb");
+	//}
 
 	if (NULL == m_fpAudioResampleFile)
 	{
@@ -417,79 +435,22 @@ int CWindowClientDlg::SetDecoder(char* pData)
 	m_nScreenHeight = pRepData->uiHeight;
 	PostMessage(UM_SCREEN_CREATE_MSG, 0, 0);
 
+    if (NULL == m_hDecodeThread)
+    {
+        m_hDecodeThread = (HANDLE)_beginthreadex(NULL, 0, DecodeThread, this, 0, NULL);
+        if (NULL != m_hDecodeThread)
+        {
+            m_bRunDecodeThread  = true;
+        }
+
+        m_hFrameDataListMutex   = CreateMutex(NULL, FALSE, NULL);
+    }
+
 	m_ComboHeight.EnableWindow(TRUE);
 
 	m_bVideoPlayRunning = true;
 	GetDlgItem(IDC_BUTTON_PLAY)->SetWindowText(_T("Pause"));
 	GetDlgItem(IDC_BUTTON_STOP)->EnableWindow(TRUE);
-
-	return 0;
-}
-
-int CWindowClientDlg::ProcFrameData(char* pData)
-{
-	if (NULL == pData)
-	{
-		return -1;
-	}
-
-	if (NULL == m_pDecoder)
-	{
-		return -2;
-	}
-
-	PFRAME_DATA		pFrameData		= (PFRAME_DATA)pData;
-
-	unsigned char*	pEncData		= (unsigned char*)pFrameData->pData;
-	unsigned char*	pDecData		= NULL;
-	unsigned int	uiEncSize		= pFrameData->uiFrameSize;
-	unsigned int	uiDecSize		= 0;
-
-	int				nStreamIndex	= -1;
-
-	switch (pFrameData->uiFrameType)
-	{
-	case 'A':
-		{
-			nStreamIndex = AVMEDIA_TYPE_AUDIO;
-		}
-		break;
-
-	default:
-		{
-			nStreamIndex = AVMEDIA_TYPE_VIDEO;
-		}
-		break;
-	}
-
-	if ((0 > m_pDecoder->Decode(nStreamIndex, pEncData, uiEncSize, &pDecData, uiDecSize)) || (NULL == pDecData) || (0 >= uiDecSize))
-	{
-		return -3;
-	}
-
-	switch (nStreamIndex)
-	{
-	case AVMEDIA_TYPE_VIDEO:
-		{
-			if (NULL != m_fpVideoScalingFile)
-			{
-				fwrite(pDecData, 1, uiDecSize, m_fpVideoScalingFile);
-			}			
-		}
-		break;
-
-	case AVMEDIA_TYPE_AUDIO:
-		{
-			if (NULL != m_fpAudioResampleFile)
-			{
-				fwrite(pDecData, 1, uiDecSize, m_fpAudioResampleFile);
-			}			
-		}
-		break;
-
-	default:
-		break;
-	}
 
 	return 0;
 }
@@ -507,11 +468,11 @@ void CWindowClientDlg::SetPlayStatus(char* pData)
 
 	if (2 == pRepData->uiPlayStatus)
 	{
-		if (NULL != m_fpVideoScalingFile)
-		{
-			fclose(m_fpVideoScalingFile);
-			m_fpVideoScalingFile = NULL;
-		}
+		//if (NULL != m_fpVideoScalingFile)
+		//{
+		//	fclose(m_fpVideoScalingFile);
+		//	m_fpVideoScalingFile = NULL;
+		//}
 
 		if (NULL != m_fpAudioResampleFile)
 		{
@@ -522,6 +483,8 @@ void CWindowClientDlg::SetPlayStatus(char* pData)
 		GetDlgItem(IDC_BUTTON_STOP)->EnableWindow(FALSE);
 
 		m_bVideoPlayRunning = false;
+
+        DestroyScreenWnd();
 	}
 }
 
@@ -540,6 +503,12 @@ void CWindowClientDlg::SetResolution(BOOL bResetResolution /* = FALSE */)
 		else
 		{
 			uiHeight = (UINT)_ttoi(StrHeight);
+		}
+
+		// Select same resolution
+		if (m_nScreenHeight == uiHeight)
+		{
+			return;
 		}
 
 		int nSendSize = sizeof(VS_HEADER) + sizeof(VS_SELECT_RESOLUTION_REQ);
@@ -562,17 +531,142 @@ void CWindowClientDlg::SetResolution(BOOL bResetResolution /* = FALSE */)
 			}
 		}
 
-		m_pClientThread->Send(pSendBuf, nSendSize);
+        m_pClientThread->Send(m_pClientThread->GetDefaultConSocket()->GetSocket(), nSendSize, pSendBuf);
 
 		// Disable height combo to duplicate selecting resolution 
 		m_ComboHeight.EnableWindow(FALSE);
 
-		if (NULL != m_fpVideoScalingFile)
-		{
-			fclose(m_fpVideoScalingFile);
-			m_fpVideoScalingFile = NULL;
-		}
+		//if (NULL != m_fpVideoScalingFile)
+		//{
+		//	fclose(m_fpVideoScalingFile);
+		//	m_fpVideoScalingFile = NULL;
+		//}
 	}
+}
+
+void CWindowClientDlg::PlayComplete()
+{
+    m_bVideoPlayRunning	= false;
+	m_bPause			= false;
+    m_nScreenWidth      = 0;
+    m_nScreenHeight     = 0;
+	GetDlgItem(IDC_BUTTON_PLAY)->SetWindowText(_T("Play"));
+	GetDlgItem(IDC_BUTTON_STOP)->EnableWindow(FALSE);
+
+	//if (NULL != m_fpVideoScalingFile)
+	//{
+	//	fclose(m_fpVideoScalingFile);
+	//	m_fpVideoScalingFile = NULL;
+	//}
+
+	if (NULL != m_fpAudioResampleFile)
+	{
+		fclose(m_fpAudioResampleFile);
+		m_fpAudioResampleFile = NULL;
+	}
+
+    DestroyScreenWnd();
+}
+
+void CWindowClientDlg::PushFrameData(unsigned int uiDataLen, char* pData)
+{
+    if ((0 >= uiDataLen) || (NULL == pData))
+    {
+        TraceLog("Input data is wrong.");
+        return;
+    }
+
+    char* pFrameData = new char[uiDataLen];
+    if (NULL != pFrameData)
+    {
+        memcpy(pFrameData, pData, uiDataLen);
+        WaitForSingleObject(m_hFrameDataListMutex, INFINITE);
+        m_FrameDataList.push_back(pFrameData);
+        ReleaseMutex(m_hFrameDataListMutex);
+    }
+}
+
+int CWindowClientDlg::ProcFrameData(PFRAME_DATA pFrameData)
+{
+	if (NULL == pFrameData)
+	{
+		return -1;
+	}
+
+	if (NULL == m_pDecoder)
+	{
+		return -2;
+	}
+
+	unsigned char*	pEncData		= (unsigned char*)pFrameData->pData;
+	unsigned char*	pDecData		= NULL;
+	unsigned int	uiEncSize		= pFrameData->uiFrameSize;
+	unsigned int	uiDecSize		= 0;
+    unsigned int    uiFrameNum      = pFrameData->uiFrameNum;
+
+	int				nStreamIndex	= -1;
+
+	switch (pFrameData->uiFrameType)
+	{
+	case 'A':
+		{
+			nStreamIndex = AVMEDIA_TYPE_AUDIO;
+		}
+		break;
+
+	default:
+		{
+			nStreamIndex = AVMEDIA_TYPE_VIDEO;
+		}
+		break;
+	}
+
+	if ((0 > m_pDecoder->Decode(nStreamIndex, pEncData, uiEncSize, &pDecData, uiDecSize)) || (NULL == pDecData) || (0 >= uiDecSize))
+	{
+        TraceLog("CWindowClientDlg::ProcFrameData - %s Decode Fail!", ('A' == pFrameData->uiFrameType) ? "Audio" : "Video");
+        if (NULL != pDecData)
+        {
+            av_freep(&pDecData);
+	        pDecData = NULL;
+        }
+        
+		return -3;
+	}
+
+	if (NULL != m_pScreenWnd)
+	{
+		m_pScreenWnd->PushFrameData(nStreamIndex, uiFrameNum, uiDecSize, pDecData);
+	}	
+
+	switch (nStreamIndex)
+	{
+	//case AVMEDIA_TYPE_VIDEO:
+	//	{
+	//		if (NULL != m_fpVideoScalingFile)
+	//		{
+	//			fwrite(pDecData, 1, uiDecSize, m_fpVideoScalingFile);
+	//		}			
+	//	}
+	//	break;
+
+	case AVMEDIA_TYPE_AUDIO:
+		{
+			if (NULL != m_fpAudioResampleFile)
+			{
+                TraceLog("Decoded Audio Size = %d", uiDecSize);
+				fwrite(pDecData, 1, uiDecSize, m_fpAudioResampleFile);
+			}			
+		}
+		break;
+
+	default:
+		break;
+	}
+
+	av_freep(&pDecData);
+	pDecData = NULL;
+
+	return 0;
 }
 
 int CWindowClientDlg::CreateScreenWnd(int nWidth, int nHeight)
@@ -589,29 +683,71 @@ int CWindowClientDlg::CreateScreenWnd(int nWidth, int nHeight)
 	}
 
 	m_pScreenWnd->SetScreenSize(nWidth, nHeight);
+	m_pScreenWnd->SetWfx(m_VsRawInfo.uiChannels, m_VsRawInfo.uiSampleRate);
 
-	if (FALSE == m_pScreenWnd->Create(IDD_SCREEN_WND, this))
+    if (FALSE == m_pScreenWnd->Create(CScreenWnd::IDD, this))
 	{
 		return -2;
 	}
 
-	m_pScreenWnd->SetWindowText(_T("Test.mp4"));
-	m_pScreenWnd->ShowWindow(TRUE);
+    m_pScreenWnd->SetWindowText(m_StrLastVideoFileName);
+	m_pScreenWnd->ShowWindow(SW_SHOW);
 
 	return 0;
 }
 
 void CWindowClientDlg::DestroyScreenWnd()
 {
-	if (NULL != m_pScreenWnd)
-	{
-		if (NULL != m_pScreenWnd->GetSafeHwnd())
-		{
-			m_pScreenWnd->DestroyWindow();
-		}
+    if (NULL != m_pScreenWnd)
+    {
+        if (NULL != m_pScreenWnd->GetSafeHwnd())
+        {
+            m_pScreenWnd->SendMessage(WM_CLOSE, 0, 0);
+        }       
+    }
 
-		SAFE_DELETE(m_pScreenWnd);
-	}
+    SAFE_DELETE(m_pScreenWnd);
+}
+
+unsigned int __stdcall CWindowClientDlg::DecodeThread(void* lpParam)
+{
+    CWindowClientDlg* pThis = (CWindowClientDlg*)lpParam;
+    if (NULL == pThis)
+    {
+        return 0;
+    }
+
+    char*       pData       = NULL;
+    PFRAME_DATA pFrameData  = NULL;
+
+    while (true == pThis->m_bRunDecodeThread)
+    {
+        if (0 >= pThis->m_FrameDataList.size())
+        {
+            Sleep(10);
+            continue;
+        }
+
+        WaitForSingleObject(pThis->m_hFrameDataListMutex, INFINITE);
+        pFrameData = (PFRAME_DATA)pThis->m_FrameDataList.front();
+        ReleaseMutex(pThis->m_hFrameDataListMutex);
+
+        if (NULL != pFrameData)
+        {
+            pThis->ProcFrameData(pFrameData);
+            pData = (char*)pFrameData;
+            SAFE_DELETE_ARRAY(pData);
+        }
+
+        WaitForSingleObject(pThis->m_hFrameDataListMutex, INFINITE);
+        pThis->m_FrameDataList.pop_front();
+        ReleaseMutex(pThis->m_hFrameDataListMutex);
+    }
+
+    CloseHandle(pThis->m_hDecodeThread);
+    pThis->m_hDecodeThread = NULL;
+
+    return 1;
 }
 
 BOOL CWindowClientDlg::PreTranslateMessage(MSG* pMsg)
@@ -679,7 +815,7 @@ void CWindowClientDlg::OnBnClickedButtonReqVideoList()
 
 		PVS_HEADER pHeader = (PVS_HEADER)pSendBuf;
 		MAKE_VS_HEADER(pHeader, SVC_GET_LIST, 0, 0);
-		m_pClientThread->Send(pSendBuf, sizeof(VS_HEADER));
+		m_pClientThread->Send(m_pClientThread->GetDefaultConSocket()->GetSocket(), sizeof(VS_HEADER), pSendBuf);
 	}	
 }
 
@@ -718,7 +854,7 @@ void CWindowClientDlg::OnBnClickedButtonPlay()
 
 		memcpy(pSendBuf + sizeof(VS_HEADER), StrFileName.GetBuffer(), StrFileName.GetLength());
 
-		m_pClientThread->Send(pSendBuf, nSendSize);
+		m_pClientThread->Send(m_pClientThread->GetDefaultConSocket()->GetSocket(), nSendSize, pSendBuf);
 	}
 	else
 	{
@@ -734,7 +870,7 @@ void CWindowClientDlg::OnBnClickedButtonPlay()
 		PVS_SET_PLAY_STATUS pReqData	= (PVS_SET_PLAY_STATUS)(pSendBuf + sizeof(VS_HEADER));
 		pReqData->uiPlayStatus			= (true == m_bPause) ? 1 : 0;
 
-		m_pClientThread->Send(pSendBuf, nSendSize);
+		m_pClientThread->Send(m_pClientThread->GetDefaultConSocket()->GetSocket(), nSendSize, pSendBuf);
 	}
 }
 
@@ -754,8 +890,10 @@ void CWindowClientDlg::OnBnClickedButtonStop()
 		PVS_SET_PLAY_STATUS pReqData = (PVS_SET_PLAY_STATUS)(pSendBuf + sizeof(VS_HEADER));
 		pReqData->uiPlayStatus = 2;
 
-		m_pClientThread->Send(pSendBuf, nSendSize);
+		m_pClientThread->Send(m_pClientThread->GetDefaultConSocket()->GetSocket(), nSendSize, pSendBuf);
 	}
+
+    m_bRunDecodeThread = false;
 }
 
 
@@ -779,5 +917,6 @@ LRESULT CWindowClientDlg::OnRecvScreenCreateMsg(WPARAM wParam, LPARAM lParam)
 LRESULT CWindowClientDlg::OnRecvScreenCloseMsg(WPARAM wParam, LPARAM lParam)
 {
 	OnBnClickedButtonStop();
+    m_pScreenWnd = NULL;
 	return 1;
 }

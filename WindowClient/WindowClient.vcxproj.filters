@@ -19,14 +19,17 @@
     <Filter Include="Codec">
       <UniqueIdentifier>{3d6b1642-1b6b-4b8a-a76c-68412da8bd18}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Multiplex">
+      <UniqueIdentifier>{9e76d046-cef1-4f1a-bf01-d379e7799cb2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Network">
+      <UniqueIdentifier>{5b03b111-8c95-4bec-9440-611ec37d9472}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Screen">
+      <UniqueIdentifier>{964e59f1-95d3-46b2-873a-4105a4f30875}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="ClientSocket.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="ClientThread.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
     <ClCompile Include="stdafx.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
@@ -48,20 +51,29 @@
     <ClCompile Include="..\Codec\Decoder.cpp">
       <Filter>Codec</Filter>
     </ClCompile>
-    <ClCompile Include="..\Codec\CodecManager.cpp">
-      <Filter>Codec</Filter>
-    </ClCompile>
     <ClCompile Include="..\Codec\Encoder.cpp">
       <Filter>Codec</Filter>
     </ClCompile>
+    <ClCompile Include="..\Common\ObjectManager.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Multiplex\Muxer.cpp">
+      <Filter>Multiplex</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Multiplex\Demuxer.cpp">
+      <Filter>Multiplex</Filter>
+    </ClCompile>
+    <ClCompile Include="ClientThread.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="ClientSocket.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="ScreenWnd.cpp">
+      <Filter>Screen</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="ClientSocket.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="ClientThread.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
     <ClInclude Include="Resource.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
@@ -98,11 +110,29 @@
     <ClInclude Include="..\Codec\Decoder.h">
       <Filter>Codec</Filter>
     </ClInclude>
-    <ClInclude Include="..\Codec\CodecManager.h">
-      <Filter>Codec</Filter>
-    </ClInclude>
     <ClInclude Include="..\Codec\Encoder.h">
       <Filter>Codec</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\ObjectManager.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Multiplex\Mux.h">
+      <Filter>Multiplex</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Multiplex\Muxer.h">
+      <Filter>Multiplex</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Multiplex\Demuxer.h">
+      <Filter>Multiplex</Filter>
+    </ClInclude>
+    <ClInclude Include="ClientThread.h">
+      <Filter>Network</Filter>
+    </ClInclude>
+    <ClInclude Include="ClientSocket.h">
+      <Filter>Network</Filter>
+    </ClInclude>
+    <ClInclude Include="ScreenWnd.h">
+      <Filter>Screen</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

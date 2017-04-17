@@ -47,7 +47,11 @@
 #include <winsock2.h>
 #include <windows.h>
 
+#include <list>
+#include <map>
+
 #include "CommonDef.h"
+#include "Common_Protocol.h"
 
 #pragma comment(lib, "ws2_32.lib")
 

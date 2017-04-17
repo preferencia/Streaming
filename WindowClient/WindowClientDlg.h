@@ -5,10 +5,12 @@
 #pragma once
 #include "afxwin.h"
 #include "ClientThread.h"
-#include "CodecManager.h"
+#include "ObjectManager.h"
 #include "ScreenWnd.h"
 
-typedef OPENED_FILE_INFO VS_RAW_INFO;
+typedef OPENED_FILE_INFO        VS_RAW_INFO;
+typedef list<char*>             FrameDataList;
+typedef list<char*>::iterator   FrameDataListIt;
 
 // CWindowClientDlg 대화 상자
 class CWindowClientDlg : public CDialog
@@ -45,12 +47,16 @@ private:
 	void		InsertVideoList		(char* pData);
 	void		InsertVideoHeight	(char* pData);
 	int 		SetDecoder			(char* pData);
-	int			ProcFrameData		(char* pData);
 	void		SetPlayStatus		(char* pData);
 	void        SetResolution(BOOL bResetResolution = FALSE);
+    void        PlayComplete();
+    void		PushFrameData		(unsigned int uiDataLen, char* pData);
+    int			ProcFrameData		(PFRAME_DATA pFrameData);
 
 	int 		CreateScreenWnd		(int nWidth, int nHeight);
 	void		DestroyScreenWnd();
+
+    static unsigned int __stdcall	DecodeThread(void* lpParam);
 
 public:
 	virtual BOOL	PreTranslateMessage(MSG* pMsg);
@@ -63,10 +69,12 @@ public:
 	afx_msg LRESULT OnRecvScreenCreateMsg(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnRecvScreenCloseMsg(WPARAM wParam, LPARAM lParam);
 
+    void            ResetScreenWnd()    {   m_pScreenWnd = NULL;  }
+
 private:
 	CClientThread*	m_pClientThread;
 	
-	CCodecManager*	m_pCodecManager;
+	CObjectManager*	m_pObjectManager;
 	CCodec*			m_pDecoder;
 
 	CListBox		m_VideoList;
@@ -75,8 +83,8 @@ private:
 	
 	VS_RAW_INFO		m_VsRawInfo;
 
-	// Test
-	FILE*			m_fpVideoScalingFile;
+	//// Test
+	//FILE*			m_fpVideoScalingFile;
 	FILE*			m_fpAudioResampleFile;
 
 	BOOL			m_bVideoPlayRunning;
@@ -85,4 +93,11 @@ private:
 	CScreenWnd*		m_pScreenWnd;
 	int				m_nScreenWidth;
 	int				m_nScreenHeight;
+
+    HANDLE			m_hFrameDataListMutex;
+	HANDLE			m_hDecodeThread;
+    bool            m_bRunDecodeThread;
+
+    FrameDataList   m_FrameDataList;
+    FrameDataListIt m_FrameDataListIt;
 };

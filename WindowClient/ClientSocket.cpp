@@ -4,22 +4,18 @@
 
 CClientSocket::CClientSocket()
 {
-	m_ProcCallbackFunc	= NULL;
-	m_pObject			= NULL;
 	m_bIsConnected      = false;
 }
 
 CClientSocket::~CClientSocket()
 {
 #ifdef _WINDOWS
-	closesocket(m_hConnectSocket);
+	closesocket(m_hSocket);
 #else
-	close(m_hConnectSocket);
+	close(m_hSocket);
 #endif
 
-	m_hConnectSocket	= INVALID_SOCKET;
-	m_ProcCallbackFunc	= NULL;
-	m_pObject			= NULL;
+	m_hSocket			= INVALID_SOCKET;
 	m_bIsConnected      = false;
 
 #ifdef _WINDOWS
@@ -45,8 +41,8 @@ bool CClientSocket::Init(char* pszServerIP, int nServerPort)
 	}
 #endif
 
-	m_hConnectSocket	= socket(PF_INET, SOCK_STREAM, 0);
-	if (INVALID_SOCKET == m_hConnectSocket)
+	m_hSocket = socket(PF_INET, SOCK_STREAM, 0);
+	if (INVALID_SOCKET == m_hSocket)
 	{
 		TraceLog("socket() error!");
 		return false;
@@ -64,107 +60,34 @@ bool CClientSocket::Connect(char* pszServerIP, int nServerPort)
 	ServAddr.sin_addr.s_addr	= inet_addr(pszServerIP);
 	ServAddr.sin_port			= htons(nServerPort);
 
-	if (SOCKET_ERROR == connect(m_hConnectSocket, (SOCKADDR*)&ServAddr, nServAddrSize))
+	if (SOCKET_ERROR == connect(m_hSocket, (SOCKADDR*)&ServAddr, nServAddrSize))
 	{
 		TraceLog("connect() error!");
+		return false;
+	}	
+
+	if (0 > ((CSocketThread*)m_pSocketThread)->ActiveConnectSocket(m_hSocket, &ServAddr))
+	{
 		return false;
 	}
 
 	m_bIsConnected = true;
-
-	return true;
+	return m_bIsConnected;
 }
 
-void CClientSocket::SetProcCallbakcInfo(void* pObject, ProcCallback ProcCallbackFunc)
-{	
-	m_pObject			= pObject;
-	m_ProcCallbackFunc	= ProcCallbackFunc;	
-}
-
-bool CClientSocket::Send(char* pData, int nDataLen)
+int CClientSocket::ProcSvcData(int nSvcCode, int nSvcDataLen, char* lpBuf)
 {
-	if ((NULL == pData) || (0 >= nDataLen))
+	int nRet = 0;
+
+	if (0 > (nRet = CConnectSocket::ProcSvcData(nSvcCode, nSvcDataLen, lpBuf)))
 	{
-		TraceLog("Data is wrong!");
-		return false;
+		TraceLog("Error Param checked - err = [%d]", nRet);
+		return nRet;
 	}
 
-	if (INVALID_SOCKET == m_hConnectSocket)
+	if (NULL != m_pSocketThread)
 	{
-		TraceLog("Client socket is invalid!");
-		return false;
-	}
-
-	return CConnectSocket::Send(pData, nDataLen);
-}
-
-UINT CClientSocket::ProcessReceive(char* lpBuf, int nDataLen)
-{
-	if ((NULL == lpBuf) || (0 >= nDataLen))
-	{
-		TraceLog("Data is wrong!");
-		return false;
-	}
-
-	if (INVALID_SOCKET == m_hConnectSocket)
-	{
-		TraceLog("Client socket is invalid!");
-		return false;
-	}
-
-	PVS_HEADER pHeader      = (PVS_HEADER)lpBuf;
-	TraceLog("Header Info - SVC = %d, Err = %d, Data Len = %d, Checksum = %d", pHeader->uiSvcCode, pHeader->uiErrCode, pHeader->uiDataLen, pHeader->uiChecksum);
-
-    UINT uiChecksum = pHeader->uiSvcCode ^ pHeader->uiErrCode ^ pHeader->uiDataLen;
-    if (pHeader->uiChecksum != uiChecksum)
-    {
-        TraceLog("Checksum is invalid - Calc = %d, recv = %d", uiChecksum, pHeader->uiChecksum);
-		return false;
-    }
-
-    unsigned int uiRecvSvcCode      = pHeader->uiSvcCode;
-    unsigned int uiRecvErrCode      = pHeader->uiErrCode;
-    unsigned int uiRecvDataLen      = pHeader->uiDataLen;
-    unsigned int uiHeaderSize		= sizeof(VS_HEADER);
-    if ((0 < uiRecvDataLen) && (nDataLen < (uiHeaderSize + uiRecvDataLen)))
-    {
-		TraceLog("Need More Data - Total Data Len = %d, Receive Data Len = %d", uiHeaderSize + uiRecvDataLen, nDataLen);
-        return (uiHeaderSize + uiRecvDataLen) - nDataLen;
-    }
-
-	if (0 > uiRecvErrCode)
-	{
-		return -1;
-	}
-
-	char*   pProcData = NULL;
-	BOOL    bDataLenOver = FALSE;
-	int     nInputDataLen = nDataLen;
-	int     nOverDataLen = 0;
-
-	// exist extra data
-	if (nInputDataLen > (uiHeaderSize + uiRecvDataLen))
-	{
-		bDataLenOver = TRUE;
-		nOverDataLen = nInputDataLen - (uiHeaderSize + uiRecvDataLen);
-		pProcData = new char[(uiHeaderSize + uiRecvDataLen)];
-		memcpy(pProcData, lpBuf, (uiHeaderSize + uiRecvDataLen));
-	}
-	else
-	{
-		pProcData = lpBuf;
-	}
-
-	if ((NULL != m_pObject) && (NULL != m_ProcCallbackFunc))
-	{
-		m_ProcCallbackFunc(m_pObject, uiRecvSvcCode, uiRecvDataLen, pProcData + uiHeaderSize);
-	}
-
-	if (TRUE == bDataLenOver)
-	{
-		SAFE_DELETE(pProcData);
-		lpBuf = (char*)(lpBuf + (uiHeaderSize + uiRecvDataLen));
-		return ProcessReceive(lpBuf, nOverDataLen);
+		((CSocketThread*)m_pSocketThread)->PushSvcData(nSvcCode, nSvcDataLen, lpBuf);
 	}
 
 	return 0;
