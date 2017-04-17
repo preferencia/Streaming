@@ -33,7 +33,6 @@ CSessionSocket::~CSessionSocket()
 	}
 #endif // _WIN32
 
-
 	if (NULL != m_pStreamThread)
 	{
 		m_pStreamThread->Stop();
@@ -199,6 +198,7 @@ int CSessionSocket::ProcFileOpen(char* pszFileName, int nFileNameLen)
 		return -1;
 	}
 
+    TraceLog("Delete StreamThread 2");
 	SAFE_DELETE(m_pStreamThread);
 
 	m_pStreamThread = new CStreamThread;
@@ -277,9 +277,12 @@ int CSessionSocket::ProcSetPlayStatus(UINT uiPlayStatus)
 		break;
 
 	case 2:
-		{
-			m_pStreamThread->Stop();
-			uiRet = 2;
+		{            
+			if (NULL != m_pStreamThread)
+	        {
+		        m_pStreamThread->Stop();
+	        }
+            uiRet = 2;
 		}
 		break;
 
