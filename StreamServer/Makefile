@@ -1,21 +1,21 @@
 .SUFFIXES : .cpp .o 
 
 CXX = g++ 
-INCS = -I./ -I../ -I./Stream -I./Network/Listen -I./Network/Session -I../Common -I../Codec -I../Multiplex -I../../../FFMPEG/Build/include
+INCS = -I./ -I../ -I./Stream -I./Network/Listen -I./Network/Session -I../Common -I../Codec -I../Multiplex -I../FFMPEG/Linux/include
 LIBS = -lpthread \
-       ../../../FFMPEG/Build/lib/libavcodec.so \
-	   ../../../FFMPEG/Build/lib/libavformat.so \
-	   ../../../FFMPEG/Build/lib/libavfilter.so \
-	   ../../../FFMPEG/Build/lib/libavutil.so \
-	   ../../../FFMPEG/Build/lib/libpostproc.so \
-	   ../../../FFMPEG/Build/lib/libswscale.so \
-	   ../../../FFMPEG/Build/lib/libswresample.so \
-	   ../../../FFMPEG/Build/lib/libfdk-aac.so \
-	   ../../../FFMPEG/Build/lib/libmp3lame.so \
-	   ../../../FFMPEG/Build/lib/libopus.so \
-	   ../../../FFMPEG/Build/lib/libvpx.so \
-	   ../../../FFMPEG/Build/lib/libx264.so \
-	   ../../../FFMPEG/Build/lib/libx265.so
+       ../FFMPEG/Linux/lib/libavcodec.so \
+	   ../FFMPEG/Linux/lib/libavformat.so \
+	   ../FFMPEG/Linux/lib/libavfilter.so \
+	   ../FFMPEG/Linux/lib/libavutil.so \
+	   ../FFMPEG/Linux/lib/libpostproc.so \
+	   ../FFMPEG/Linux/lib/libswscale.so \
+	   ../FFMPEG/Linux/lib/libswresample.so \
+	   ../FFMPEG/Linux/lib/libfdk-aac.so \
+#	   ../FFMPEG/Linux/lib/libmp3lame.so \
+#	   ../FFMPEG/Linux/lib/libopus.so \
+#	   ../FFMPEG/Linux/lib/libvpx.so \
+	   ../FFMPEG/Linux/lib/libx264.so \
+	   ../FFMPEG/Linux/lib/libx265.so
 
 CXXFLAGS = -Wall -g -O2 -m64 -D_REENTRANT -D_THREAD_SAFE	
 NETWORK_OBJS = ListenSocket.o SessionThread.o SocketThread.o SessionSocket.o ConnectSocket.o
