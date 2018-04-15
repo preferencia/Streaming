@@ -12,5 +12,9 @@ public:
 	virtual int		OpenCodecContext(int* pStreamIndex, AVCodecContext** ppCodecCtx, 
 									 AVFormatContext* pInFmtCtx, AVFormatContext* pOutFmtCtx, enum AVMediaType Type);
 	virtual int		GetFormatFromSampleFmt(const char** pszFmt, enum AVSampleFormat SampleFmt);
+	
+private:
+	AVBufferRef* 	m_pHwDeviceCtx;
+    AVBufferRef*    m_pHwFramesCtx;
 };
 

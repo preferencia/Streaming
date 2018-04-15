@@ -13,12 +13,10 @@ CMuxer::CMuxer()
 	m_llAudioBitrate	= 0LL;
 }
 
-
 CMuxer::~CMuxer()
 {
 	m_pszFileName    = NULL;
 }
-
 
 int CMuxer::FileOpenProc(char* pszFileName, AVFormatContext** ppFmtCtx)
 {
@@ -113,33 +111,33 @@ int CMuxer::OpenCodecContext(int* pStreamIndex, AVCodecContext** ppCodecCtx,
 		* streams easily using filters */
 		if (AVMEDIA_TYPE_VIDEO == pDecCtx->codec_type)
 		{
-			pEncCtx->width					= m_nWidth;
-			pEncCtx->height					= m_nHeight;
+			pEncCtx->width								= m_nWidth;
+			pEncCtx->height							= m_nHeight;
 			pEncCtx->sample_aspect_ratio	= pDecCtx->sample_aspect_ratio;
-			pEncCtx->pix_fmt				= AV_PIX_FMT_YUV420P;
+			pEncCtx->pix_fmt							= AV_PIX_FMT_YUV420P;
 
 			/* video time_base can be set to whatever is handy and supported by encoder */
-			pEncCtx->time_base				= pDecCtx->time_base;
+			pEncCtx->time_base						= pDecCtx->time_base;
 
-			pEncCtx->bit_rate				= m_llVideoBitrate;
+			pEncCtx->bit_rate						= m_llVideoBitrate;
 
-			pEncCtx->qcompress				= 0.6;
-			pEncCtx->qmin					= 3;
-			pEncCtx->qmax					= 35;
-			pEncCtx->max_qdiff				= 4;
+			pEncCtx->qcompress						= 0.6;
+			pEncCtx->qmin								= 3;
+			pEncCtx->qmax								= 35;
+			pEncCtx->max_qdiff						= 4;
 		}
 		else
 		{
-			pEncCtx->sample_rate			= pDecCtx->sample_rate;
+			pEncCtx->sample_rate					= pDecCtx->sample_rate;
 			pEncCtx->channel_layout			= AV_CH_LAYOUT_STEREO;
-			pEncCtx->channels				= av_get_channel_layout_nb_channels(pEncCtx->channel_layout);
+			pEncCtx->channels						= av_get_channel_layout_nb_channels(pEncCtx->channel_layout);
 
 			/* take first format from list of supported formats */
-			pEncCtx->sample_fmt				= AV_SAMPLE_FMT_FLTP;
-			pEncCtx->time_base.num			= 1;
-			pEncCtx->time_base.den			= pEncCtx->sample_rate;
+			pEncCtx->sample_fmt					= AV_SAMPLE_FMT_FLTP;
+			pEncCtx->time_base.num				= 1;
+			pEncCtx->time_base.den				= pEncCtx->sample_rate;
 
-			pEncCtx->bit_rate				= m_llAudioBitrate;
+			pEncCtx->bit_rate						= m_llAudioBitrate;
 		}
 
 		/* Third parameter can be used to pass settings to encoder */
@@ -175,7 +173,6 @@ int CMuxer::OpenCodecContext(int* pStreamIndex, AVCodecContext** ppCodecCtx,
 	return nRet;
 }
 
-
 void CMuxer::SetMuxInfo(int nWidth, int nHeight, int64_t llVideoBitrate, int64_t llAudioBitrate)
 {
 	m_nWidth			= nWidth;
@@ -183,7 +180,6 @@ void CMuxer::SetMuxInfo(int nWidth, int nHeight, int64_t llVideoBitrate, int64_t
 	m_llVideoBitrate	= llVideoBitrate;
 	m_llAudioBitrate	= llAudioBitrate;
 }
-
 
 int CMuxer::WriteFileHeader(AVFormatContext* pFmtCtx)
 {
@@ -203,7 +199,6 @@ int CMuxer::WriteFileHeader(AVFormatContext* pFmtCtx)
     return 0;
 }
 
-
 int CMuxer::WriteEncFrame(AVFormatContext* pFmtCtx, AVPacket* pPacket)
 {
 	if ((NULL == pFmtCtx) || (NULL == pPacket))
@@ -213,8 +208,8 @@ int CMuxer::WriteEncFrame(AVFormatContext* pFmtCtx, AVPacket* pPacket)
 
     /* prepare packet for muxing */
     av_packet_rescale_ts(pPacket,
-                         pFmtCtx->streams[pPacket->stream_index]->codec->time_base,
-                         pFmtCtx->streams[pPacket->stream_index]->time_base);
+											pFmtCtx->streams[pPacket->stream_index]->codec->time_base,
+											pFmtCtx->streams[pPacket->stream_index]->time_base);
 
 	int nRet = av_interleaved_write_frame(pFmtCtx, pPacket);
 	return nRet;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common.h"
+#include "HWAccel.h"
 
 class CMux
 {
@@ -12,15 +13,15 @@ public:
     }
 	virtual ~CMux() {}
 
-	virtual int		FileOpenProc(char* pszFileName, AVFormatContext** ppFmtCtx)											{ return 0; }
+	virtual int		FileOpenProc(char* pszFileName, AVFormatContext** ppFmtCtx)											{ return 0; 	}
 	virtual int		OpenCodecContext(int* pStreamIndex, AVCodecContext** ppCodecCtx, 
-									 AVFormatContext* pInFmtCtx, AVFormatContext* pOutFmtCtx, enum AVMediaType Type)	{ return 0; }
-    virtual int		GetFormatFromSampleFmt(const char** pszFmt, enum AVSampleFormat SampleFmt)							{ return 0; }
+									 AVFormatContext* pInFmtCtx, AVFormatContext* pOutFmtCtx, enum AVMediaType Type)	{ return 0; 	}
+    virtual int		GetFormatFromSampleFmt(const char** pszFmt, enum AVSampleFormat SampleFmt)				{ return 0; 	}
 
     // for muxing
-	virtual void	SetMuxInfo(int nWidth, int nHeight, int64_t llVideoBitrate, int64_t llAudioBitrate)					{			}
-    virtual int		WriteFileHeader(AVFormatContext* pFmtCtx)											                { return 0; }
-	virtual int		WriteEncFrame(AVFormatContext* pFmtCtx, AVPacket* pPacket)											{ return 0; }
+	virtual void		SetMuxInfo(int nWidth, int nHeight, int64_t llVideoBitrate, int64_t llAudioBitrate)	{					}
+    virtual int		WriteFileHeader(AVFormatContext* pFmtCtx)											                				{ return 0; 	}
+	virtual int		WriteEncFrame(AVFormatContext* pFmtCtx, AVPacket* pPacket)												{ return 0; 	}
 
 protected:
     int         m_nMuxType;

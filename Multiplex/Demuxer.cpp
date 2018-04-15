@@ -5,7 +5,6 @@
 #pragma warning(disable:4996)
 #endif
 
-
 typedef struct sample_fmt_entry
 {
 	enum AVSampleFormat SampleFmt;
@@ -13,18 +12,18 @@ typedef struct sample_fmt_entry
 	const char* pszFmtLe;
 } SampleFmtEntry;
 
-
 CDemuxer::CDemuxer()
 {
-
+	m_pHwDeviceCtx 	= NULL;
+    m_pHwFramesCtx  = NULL;
 }
-
 
 CDemuxer::~CDemuxer()
 {
-	m_pszFileName    = NULL;
+	av_buffer_unref(&m_pHwDeviceCtx);
+    av_buffer_unref(&m_pHwFramesCtx);
+	m_pszFileName    	= NULL;	
 }
-
 
 int CDemuxer::FileOpenProc(char* pszFileName, AVFormatContext** ppFmtCtx)
 {
@@ -114,6 +113,22 @@ int CDemuxer::OpenCodecContext(int* pStreamIndex, AVCodecContext** ppCodecCtx,
 
 		/* Init the decoders, with or without reference counting */
 		av_dict_set(&pOpts, "refcounted_frames", "1", 0);
+		
+		/* Init video hw accel */
+		if ( (-1 < g_nHwDevType) && (AVMEDIA_TYPE_VIDEO == Type) )
+		{
+			TraceLog("CDemuxer::OpenCodecContext - Try init video hw accel codec");
+#ifdef _WIN32
+            if (true == g_bCheckHwPixFmt)
+#endif
+            {
+                (*ppCodecCtx)->get_format  = HWAccel::GetHwFormat;
+            }
+            
+			nRet = HWAccel::InitHwCodec(*ppCodecCtx, (const enum AVHWDeviceType)g_nHwDevType, &m_pHwDeviceCtx, &m_pHwFramesCtx);
+            TraceLog("CDemuxer::OpenCodecContext - Init video hw accel codec result = %d, hw device ctx = 0x%08X, hw frames ctx = 0x%08X", nRet, m_pHwDeviceCtx, m_pHwFramesCtx);
+		}
+		
 		nRet = avcodec_open2(*ppCodecCtx, pDec, &pOpts);
 		if (0 > nRet)
 		{
@@ -133,11 +148,11 @@ int CDemuxer::GetFormatFromSampleFmt(const char** pszFmt, enum AVSampleFormat Sa
 {
 	SampleFmtEntry sample_fmt_entries[] =
 	{
-		{ AV_SAMPLE_FMT_U8,  "u8",    "u8" },
-		{ AV_SAMPLE_FMT_S16, "s16be", "s16le" },
-		{ AV_SAMPLE_FMT_S32, "s32be", "s32le" },
-		{ AV_SAMPLE_FMT_FLT, "f32be", "f32le" },
-		{ AV_SAMPLE_FMT_DBL, "f64be", "f64le" },
+		{ AV_SAMPLE_FMT_U8,  "u8",    		"u8" 		},
+		{ AV_SAMPLE_FMT_S16, "s16be", 	"s16le" 	},
+		{ AV_SAMPLE_FMT_S32, "s32be", 	"s32le" 	},
+		{ AV_SAMPLE_FMT_FLT, "f32be", 	"f32le" 	},
+		{ AV_SAMPLE_FMT_DBL, "f64be", 	"f64le" 	},
 	};
 	
 	*pszFmt = NULL;
@@ -153,8 +168,8 @@ int CDemuxer::GetFormatFromSampleFmt(const char** pszFmt, enum AVSampleFormat Sa
 	}
 
 	fprintf(stderr,
-		"sample format %s is not supported as output format\n",
-		av_get_sample_fmt_name(SampleFmt));
+				"sample format %s is not supported as output format\n",
+				av_get_sample_fmt_name(SampleFmt));
 
 	return -1;
 }
