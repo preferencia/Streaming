@@ -6,6 +6,7 @@ extern "C"
 	#include <libavutil/samplefmt.h>
 	#include <libavutil/timestamp.h>
 	#include <libavutil/pixdesc.h>
+	#include <libavutil/hwcontext.h>
 	#include <libavutil/opt.h>
 	#include <libavutil/channel_layout.h>
 	#include <libavformat/avformat.h>
@@ -56,12 +57,12 @@ enum
 	STREAM_PROC_STOP,
 };
 
-typedef struct FilteringContext
+typedef struct FilterContext
 {
     AVFilterContext*	pBufferSrcCtx;
 	AVFilterContext*	pBufferSinkCtx;
 	AVFilterGraph*		pFilterGraph;
-} FilteringContext;
+} FilterContext;
 
 typedef struct _OPENED_FILE_INFO
 {
@@ -106,3 +107,10 @@ typedef struct FRAME_DATA
 	UINT		uiFrameSize;
 	char		pData[0];
 } FRAME_DATA, *PFRAME_DATA;
+
+typedef struct FILTER_DESCR_DATA
+{
+    // Scale
+    UINT        uiWidth;
+    UINT        uiHeight;
+} FILTER_DESCR_DATA, *PFILTER_DESCR_DATA;
