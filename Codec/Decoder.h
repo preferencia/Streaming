@@ -33,46 +33,48 @@ private:
 	virtual int					DecodePacket(int *pGotFrame, int nCached);
 
 #ifdef _USE_FILTER_GRAPH
-	virtual int					ProcDecodeData(int nMediaType, AVFrame* pFrame);
+	virtual int					ProcDecodeData(int nMediaType, int nPicType, AVFrame* pFilterFrame);
 #else
 	virtual int					ProcDecodeData(int nDataType, int nPictType, unsigned int uiDataSize, unsigned char* pData);
 #endif
 
 protected:
-#ifndef _USE_FILTER_GRAPH
 	virtual int					AllocVideoBuffer();
-#endif // _USE_FILTER_GRAPH
 	virtual int					InitFrame();
 
 private:
-	AVFrame*			        m_pFrame;
+	AVFrame*			        		m_pFrame;
+	AVFrame*							m_pFilterFrames[2];
 
 	// Audio Src Info (for resampling)
 	AVSampleFormat		        m_AVSrcSampleFmt;
-	int					        m_nSrcChannelLayout;
-	int					        m_nSrcChannels;
-	unsigned int		        m_uiSrcSampleRate;
-	unsigned int		        m_uiSrcSamples;
+	int					        			m_nSrcChannelLayout;
+	int					        			m_nSrcChannels;
+	unsigned int		        		m_uiSrcSampleRate;
+	unsigned int		        		m_uiSrcSamples;
 
 	/* Enable or disable frame reference counting. ou are not supposed to support
 	* both paths in your application but pick the one most appropriate to your
 	* needs. Look for the use of refcount in this example to see what are the
 	* differences of API usage between them. */
-	int					        m_nRefCount;
+	int					        			m_nRefCount;
 
-	int					        m_nVideoStreamIndex;
-	int					        m_nAudioStreamIndex;
+	int					        			m_nVideoStreamIndex;
+	int					        			m_nAudioStreamIndex;
 
-	int					        m_nVideoFrameCount;
-	int					        m_nAudioFrameCount;
+	int					        			m_nVideoFrameCount;
+	int					        			m_nAudioFrameCount;
+	
+	bool 									m_bAllocVideoBuffer;
+	int64_t								m_llVideoDstBufSize;
 
-	int					        m_nVideoDstBufSize;
-	int					        m_nVideoDstLineSizeArray[_DEC_PLANE_SIZE];
-	uint8_t*			        m_pVideoDstData[_DEC_PLANE_SIZE];
+	int					        			m_nVideoDstBufSize;
+	int					        			m_nVideoDstLineSizeArray[_DEC_PLANE_SIZE];
+	uint8_t*			        		m_pVideoDstData[_DEC_PLANE_SIZE];
 
-	unsigned int		        m_uiDecAudioSize;
+	unsigned int		        		m_uiDecAudioSize;
 
-	void*				        m_pObject;
+	void*				        			m_pObject;
 	DataProcCallback	        m_pDataProcCallback;
 };
 

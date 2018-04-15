@@ -7,35 +7,35 @@
 
 CDecoder::CDecoder()
 {
-	m_nCodecType			= OBJECT_TYPE_DECODER;
+	m_nCodecType				= OBJECT_TYPE_DECODER;
 
-	m_pFrame				= NULL;
+	m_pFrame						= NULL;
+    memset(m_pFilterFrames, 0, sizeof(m_pFilterFrames));
 
 	m_AVSrcSampleFmt		= AV_SAMPLE_FMT_NONE;
-	m_nSrcChannelLayout		= AV_CH_LAYOUT_MONO;
+	m_nSrcChannelLayout	= AV_CH_LAYOUT_MONO;
 	m_nSrcChannels			= 0;
 	m_uiSrcSampleRate		= 0;
 	m_uiSrcSamples			= 0;
 
-	m_nRefCount				= 0;
+	m_nRefCount					= 0;
 	
-	m_nVideoStreamIndex		= -1;
-	m_nAudioStreamIndex		= -1;
+	m_nVideoStreamIndex	= -1;
+	m_nAudioStreamIndex	= -1;
 
-	m_nVideoFrameCount		= 0;
-	m_nAudioFrameCount		= 0;
-
-	m_nVideoDstBufSize		= 0;
-
+	m_nVideoFrameCount	= 0;
+	m_nAudioFrameCount	= 0;
+    m_bAllocVideoBuffer = false;
+	m_llVideoDstBufSize	= 0;
+	
 	memset(m_nVideoDstLineSizeArray,	0,	_DEC_PLANE_SIZE * sizeof(int));
-	memset(m_pVideoDstData,		        0,	_DEC_PLANE_SIZE * sizeof(uint8_t*));
+	memset(m_pVideoDstData,		        	0,	_DEC_PLANE_SIZE * sizeof(uint8_t*));
 
 	m_uiDecAudioSize		= 0;
 
-	m_pObject				= NULL;
-	m_pDataProcCallback		= NULL;
+	m_pObject						= NULL;
+	m_pDataProcCallback	= NULL;
 }
-
 
 CDecoder::~CDecoder()
 {
@@ -43,6 +43,15 @@ CDecoder::~CDecoder()
 	{
 		av_free(m_pVideoDstData[0]);
 	}
+	
+    for (int nIndex = 0; nIndex < 2; ++nIndex)
+    {
+        if (NULL != m_pFilterFrames[nIndex])
+	    {
+		    av_frame_free(&m_pFilterFrames[nIndex]);
+		    m_pFilterFrames[nIndex] = NULL;
+	    }
+    }	
 
 	if (NULL != m_pFrame)
 	{
@@ -50,7 +59,6 @@ CDecoder::~CDecoder()
 		m_pFrame = NULL;
 	}
 }
-
 
 void CDecoder::SetFramePtsData(int nStreamIndex, 
                                int64_t llPts, int64_t llPktPts, int64_t llPktDts)
@@ -60,11 +68,10 @@ void CDecoder::SetFramePtsData(int nStreamIndex,
         return;
     }
 
-    m_pFrame->pts       = llPts;
+    m_pFrame->pts       	= llPts;
     m_pFrame->pkt_pts   = llPktPts;
     m_pFrame->pkt_dts   = llPktDts;
 }
-
 
 void CDecoder::GetFramePtsData(int nStreamIndex, 
                                int64_t& llPts, int64_t& llPktPts, int64_t& llPktDts)
@@ -74,37 +81,33 @@ void CDecoder::GetFramePtsData(int nStreamIndex,
         return;
     }
 
-    llPts       = m_pFrame->pts;
+    llPts       	= m_pFrame->pts;
     llPktPts    = m_pFrame->pkt_pts;
     llPktDts    = m_pFrame->pkt_dts;
 }
 
-
 void CDecoder::SetCallbackProc(void* pObject, DataProcCallback pDataProcCallback)
 {
-	m_pObject			= pObject;
-	m_pDataProcCallback = pDataProcCallback;
+	m_pObject						= pObject;
+	m_pDataProcCallback 	= pDataProcCallback;
 }
-
 
 void CDecoder::SetStreamIndex(int nVideoStreamIndex, int nAudioStreamIndex)
 {
-	m_nVideoStreamIndex = nVideoStreamIndex;
-	m_nAudioStreamIndex = nAudioStreamIndex;
+	m_nVideoStreamIndex 	= nVideoStreamIndex;
+	m_nAudioStreamIndex	= nAudioStreamIndex;
 }
-
 
 void CDecoder::SetAudioSrcInfo(AVSampleFormat AVSrcSampleFmt, 
 							   int nSrcChannelLayout, int nSrcChannels,
 							   unsigned int uiSrcSampleRate, unsigned int uiSrcSamples)
 {
-	m_AVSrcSampleFmt	= AVSrcSampleFmt;
-	m_nSrcChannelLayout = nSrcChannelLayout;
-	m_nSrcChannels		= nSrcChannels;
-	m_uiSrcSampleRate	= uiSrcSampleRate;
-	m_uiSrcSamples		= uiSrcSamples;
+	m_AVSrcSampleFmt		= AVSrcSampleFmt;
+	m_nSrcChannelLayout 	= nSrcChannelLayout;
+	m_nSrcChannels			= nSrcChannels;
+	m_uiSrcSampleRate		= uiSrcSampleRate;
+	m_uiSrcSamples			= uiSrcSamples;
 }
-
 
 int CDecoder::ReadFrameData()
 {
@@ -115,7 +118,6 @@ int CDecoder::ReadFrameData()
 
     return m_Pkt.stream_index;
 }
-
 
 int64_t CDecoder::Decode(int nStreamIndex,
 						 unsigned char* pSrcData, unsigned int uiSrcDataSize,
@@ -148,7 +150,6 @@ int64_t CDecoder::Decode(int nStreamIndex,
 
 	return 0;
 }
-
 
 int64_t CDecoder::DecodeCachedData(int nCached)
 {
@@ -218,9 +219,9 @@ int64_t CDecoder::DecodeVideo(unsigned char* pSrcData, unsigned int uiSrcDataSiz
     }
 
 	// YUV420 to RGB32 (client)
-	unsigned char*	pScalingData		= NULL;
-	int64_t			llScalingDataSize	= ScalingVideo(m_pVideoCtx->width, m_pVideoCtx->height, m_pVideoCtx->pix_fmt, m_pVideoDstData[0],
-													 m_pVideoCtx->width, m_pVideoCtx->height, AV_PIX_FMT_RGB32, &pScalingData);
+	unsigned char*		pScalingData			= NULL;
+	int64_t					llScalingDataSize	= ScalingVideo(m_pVideoCtx->width, m_pVideoCtx->height, m_pVideoCtx->pix_fmt, m_pVideoDstData[0],
+																			m_pVideoCtx->width, m_pVideoCtx->height, AV_PIX_FMT_RGB32, &pScalingData);
 
 	if ((0 >= llScalingDataSize) || (NULL == pScalingData))
 	{
@@ -231,11 +232,10 @@ int64_t CDecoder::DecodeVideo(unsigned char* pSrcData, unsigned int uiSrcDataSiz
 	uiDstDataSize	= llScalingDataSize;
 
 	//*ppDstData		= m_pVideoDstData[0];
-	//uiDstDataSize	= m_nVideoDstBufSize;
+	//uiDstDataSize	= m_llVideoDstBufSize;
 
 	return llRet;
 }
-
 
 int64_t CDecoder::DecodeAudio(unsigned char* pSrcData, unsigned int uiSrcDataSize,
 							  unsigned char** ppDstData, unsigned int& uiDstDataSize)
@@ -316,6 +316,18 @@ int64_t CDecoder::DecodeAudio(unsigned char* pSrcData, unsigned int uiSrcDataSiz
 		bPlanarSampleFmt = true;
 	}
 
+    /*
+        32bit float planar pcm -> 16bit signed non planar pcm.
+        동영상의 오디오가 2 channel이라고 해도 planar 타입으로 넘어오므로 channel과 channel layout은 모노 타입으로 설정해주어야 함.
+        32bit -> 16bit 변환이므로 목표 샘플레이트를 절반으로 설정해야 함.
+    */
+    //// ex) 44100 -> 22050
+    //unsigned char*	pResamplingData = NULL;
+    //UINT            uiRet           = ResamplingAudio(AV_SAMPLE_FMT_FLTP, AV_CH_LAYOUT_MONO, 1, 44100, 
+    //                                                 nSrcSamples, 88200, m_pAudioBuffer,
+    //                                                 AV_SAMPLE_FMT_S16, AV_CH_LAYOUT_STEREO, 2, 11025, // 22050 / 2
+    //                                                 nDstSamples, &pResamplingData);
+
 	unsigned char*	pResamplingData = NULL;
 	int64_t			llResampligDataSize = ResamplingAudio(AVSrcSampleFmt, nSrcChannelLayout, nSrcChannels, nSrcSampleRate, nSrcSamples,
 														  m_uiDecAudioSize, m_pFrame->extended_data[0],
@@ -335,10 +347,9 @@ int64_t CDecoder::DecodeAudio(unsigned char* pSrcData, unsigned int uiSrcDataSiz
 	return llRet;
 }
 
-
 int CDecoder::DecodePacket(int *pGotFrame, int nCached)
 {
-	int nRet		= 0;
+	int nRet        = 0;
 	int nDecoded	= m_Pkt.size;
 
 	*pGotFrame = 0;
@@ -375,66 +386,140 @@ int CDecoder::DecodePacket(int *pGotFrame, int nCached)
 		* Also, some decoders might over-read the packet. */
 		nDecoded = FFMIN(nRet, m_Pkt.size);
 	}
+    else
+    {
+        TraceLog("Non media data [%d]", m_Pkt.stream_index);
+        return 0;
+    }
 
 	if (*pGotFrame)
 	{
-		int				nPictType	= AV_PICTURE_TYPE_NONE;
-		unsigned int	uiDataSize	= 0; 
-		unsigned char*	pData		= NULL;
+		int						nPictType		= AV_PICTURE_TYPE_NONE;
+		unsigned int		uiDataSize	= 0; 
+		unsigned char*	pData				= NULL;
 
-		m_pFrame->pts				= av_frame_get_best_effort_timestamp(m_pFrame);
+        AVFrame* pCopyFrame = NULL;
+        AVFrame* pSwFrame = NULL;
 
-#ifdef _USE_FILTER_GRAPH
-		ProcDecodeData(m_Pkt.stream_index, m_pFrame);
-#else
+		m_pFrame->pts							= av_frame_get_best_effort_timestamp(m_pFrame);
+
 		if (m_Pkt.stream_index == m_nVideoStreamIndex)
 		{
 			if ((m_pFrame->width != m_nWidth)
 				|| (m_pFrame->height != m_nHeight)
-				|| (m_pFrame->format != m_PixelFmt))
+				/*|| (m_pFrame->format != m_PixelFmt)*/)
 			{
 				/* To handle this change, one could call av_image_alloc again and
 				* decode the following frames into another rawvideo file. */
 				TraceLog("Error: Width, height and pixel format have to be "
-						 "constant in a rawvideo file, but the width, height or "
-						 "pixel format of the input video changed:\n"
-						 "old: width = %d, height = %d, format = %s\n"
-						 "new: width = %d, height = %d, format = %s",
-						 m_nWidth, m_nHeight, av_get_pix_fmt_name(m_PixelFmt),
-						 m_pFrame->width, m_pFrame->height,
-						 av_get_pix_fmt_name((AVPixelFormat)m_pFrame->format));
+								"constant in a rawvideo file, but the width, height or "
+								"pixel format of the input video changed:\n"
+								"old: width = %d, height = %d, format = %s\n"
+								"new: width = %d, height = %d, format = %s",
+								m_nWidth, m_nHeight, av_get_pix_fmt_name(m_PixelFmt),
+								m_pFrame->width, m_pFrame->height,
+								av_get_pix_fmt_name((AVPixelFormat)m_pFrame->format));
 				return -1;
 			}
 
 			TraceLog("video_frame%s n:%d coded_n:%d pts:%s",
-					 nCached ? "(cached)" : "",
-					 m_nVideoFrameCount++, m_pFrame->coded_picture_number,
-					 av_ts_make_time_string(szLog, m_pFrame->pts, &m_pVideoCtx->time_base));
+							 nCached ? "(cached)" : "",
+							 m_nVideoFrameCount++, m_pFrame->coded_picture_number,
+							 av_ts_make_time_string(szLog, m_pFrame->pts, &m_pVideoCtx->time_base)); 
 
-			/* copy decoded frame to destination buffer:
+			if ( (m_pFrame->format == g_nHwPixFmt)
+                && (true == g_bDecodeOnlyHwPixFmt)
+                )
+			{
+                pSwFrame = av_frame_alloc();
+
+				/* retrieve data from GPU to CPU */
+				if (0 > (nRet = av_hwframe_transfer_data(pSwFrame, m_pFrame, 0))) 
+				{
+					TraceLog("Error transferring the data to system memory - Ret = %d", nRet);
+					return nRet;
+				}
+
+                nRet = av_frame_copy_props(pSwFrame, m_pFrame);
+                if (0 > nRet)
+                {
+                    return nRet;
+                }
+				
+                m_PixelFmt = (AVPixelFormat)pSwFrame->format;
+				pCopyFrame = pSwFrame;
+			}
+			else
+			{  					
+				pCopyFrame = m_pFrame;
+			}
+
+#ifndef _USE_FILTER_GRAPH            
+            if (false == m_bAllocVideoBuffer)
+            {
+                if (0 > AllocVideoBuffer())
+                {
+                    av_frame_unref(pCopyFrame);
+                    return -1;
+                }
+            }
+
+            /* copy decoded frame to destination buffer:
 			* this is required since rawvideo expects non aligned data */
 			av_image_copy(m_pVideoDstData, m_nVideoDstLineSizeArray,
-						  (const uint8_t**)(m_pFrame->data), m_pFrame->linesize,
-						  m_PixelFmt, m_nWidth, m_nHeight);
+                        (const uint8_t**)pCopyFrame->data, pCopyFrame->linesize,
+                        (AVPixelFormat)pCopyFrame->format, pCopyFrame->width, pCopyFrame->height);
 
-			nPictType					= (int)m_pFrame->pict_type;
-			uiDataSize					= m_nVideoDstBufSize;
-			pData						= m_pVideoDstData[0];
+            uiDataSize				= m_llVideoDstBufSize;
+			pData					= m_pVideoDstData[0];
+#endif
+
+			nPictType				= (int)pCopyFrame->pict_type;
 		}
 		else if (m_Pkt.stream_index == m_nAudioStreamIndex)
 		{
-			size_t unpadded_linesize	= m_pFrame->nb_samples * av_get_bytes_per_sample((AVSampleFormat)m_pFrame->format);
 			TraceLog("audio_frame%s n:%d nb_samples:%d pts:%s",
-					 nCached ? "(cached)" : "",
-					 m_nAudioFrameCount++, m_pFrame->nb_samples,
-					 av_ts_make_time_string(szLog, m_pFrame->pts, &m_pAudioCtx->time_base));
+							nCached ? "(cached)" : "",
+							m_nAudioFrameCount++, m_pFrame->nb_samples,
+							av_ts_make_time_string(szLog, m_pFrame->pts, &m_pAudioCtx->time_base));
+					 
+#ifdef _USE_FILTER_GRAPH
+            pCopyFrame = m_pFrame;
+#else
+			size_t unpadded_linesize	= m_pFrame->nb_samples * av_get_bytes_per_sample((AVSampleFormat)m_pFrame->format);
 
-			m_uiDecAudioSize			= unpadded_linesize;
-			uiDataSize					= unpadded_linesize;
-			pData						= m_pFrame->extended_data[0];
+			m_uiDecAudioSize	= unpadded_linesize;
+			uiDataSize				= unpadded_linesize;
+			pData							= m_pFrame->extended_data[0];
+#endif
 		}
 
-		ProcDecodeData(m_Pkt.stream_index, nPictType, uiDataSize, pData);
+#ifdef _USE_FILTER_GRAPH
+        if (false == m_bInitFilters[m_Pkt.stream_index])
+        {
+            nRet = (m_Pkt.stream_index == m_nVideoStreamIndex) 
+                    ? InitVideoFilters(m_szVideoFiltersDescr, pCopyFrame)
+                    : InitAudioFilters(m_szAudioFiltersDescr, pCopyFrame);
+            if (0 > nRet)
+            {
+                TraceLog("Init %s Filters Failed", (m_Pkt.stream_index == m_nVideoStreamIndex) ? "Video" : "Audio");
+                av_frame_unref(pCopyFrame);
+                return -1;
+            }
+        }
+
+        FrameFilteringProc(m_Pkt.stream_index, pCopyFrame, m_pFilterFrames[m_Pkt.stream_index]);            
+
+        ProcDecodeData(m_Pkt.stream_index, nPictType, m_pFilterFrames[m_Pkt.stream_index]);
+        av_frame_unref(m_pFilterFrames[m_Pkt.stream_index]);
+
+        if (pCopyFrame == pSwFrame)
+        {
+            av_frame_unref(pCopyFrame);
+            av_frame_free(&pCopyFrame);
+        }
+#else
+        ProcDecodeData(m_Pkt.stream_index, nPictType, uiDataSize, pData);
 #endif
 	}
 
@@ -446,9 +531,8 @@ int CDecoder::DecodePacket(int *pGotFrame, int nCached)
 	return nDecoded;
 }
 
-
 #ifdef _USE_FILTER_GRAPH
-int CDecoder::ProcDecodeData(int nMediaType, AVFrame* pFrame)
+int CDecoder::ProcDecodeData(int nDataType, int nPictType, AVFrame* pFilterFrame)
 #else
 int CDecoder::ProcDecodeData(int nDataType, int nPictType, unsigned int uiDataSize, unsigned char* pData)
 #endif
@@ -456,7 +540,7 @@ int CDecoder::ProcDecodeData(int nDataType, int nPictType, unsigned int uiDataSi
 	if ((NULL != m_pObject) && (NULL != m_pDataProcCallback))
 	{
 #ifdef _USE_FILTER_GRAPH
-		m_pDataProcCallback(m_pObject, nMediaType, pFrame);
+        m_pDataProcCallback(m_pObject, nDataType, nPictType, pFilterFrame);
 #else
 		m_pDataProcCallback(m_pObject, nDataType, nPictType, uiDataSize, pData);
 #endif
@@ -467,8 +551,6 @@ int CDecoder::ProcDecodeData(int nDataType, int nPictType, unsigned int uiDataSi
 	return -1;
 }
 
-
-#ifndef _USE_FILTER_GRAPH
 int CDecoder::AllocVideoBuffer()
 {
 	if ((0 == m_nWidth) || (0 == m_nHeight) || (AV_PIX_FMT_NONE == m_PixelFmt))
@@ -476,17 +558,18 @@ int CDecoder::AllocVideoBuffer()
 		return -1;
 	}
 
-	m_nVideoDstBufSize = av_image_alloc(m_pVideoDstData, m_nVideoDstLineSizeArray, m_nWidth, m_nHeight, m_PixelFmt, 1);
-	if (0 > m_nVideoDstBufSize)
+    m_llVideoDstBufSize = av_image_alloc(m_pVideoDstData, m_nVideoDstLineSizeArray, m_nWidth, m_nHeight, m_PixelFmt, 1);
+	
+	if ((0 >= m_llVideoDstBufSize) || (NULL == m_pVideoDstData[0]))
 	{
-		TraceLog("Could not allocate raw video buffer");
+		TraceLog("Could not allocate raw video buffer - [%d][0x%08X]", m_llVideoDstBufSize, m_pVideoDstData[0]);
 		return -2;
 	}
 
+    m_bAllocVideoBuffer = true;
+
 	return 0;
 }
-#endif
-
 
 int CDecoder::InitFrame()
 {
@@ -499,7 +582,21 @@ int CDecoder::InitFrame()
 			TraceLog("Could not allocate frame");
 			return -1;
 		}
-	}	
+	}
+	
+    for (int nIndex = 0; nIndex < 2; ++nIndex)
+    {
+        if (NULL == m_pFilterFrames[nIndex])
+	    {
+		    m_pFilterFrames[nIndex] = av_frame_alloc();
+		    if (NULL == m_pFilterFrames[nIndex])
+		    {
+			    TraceLog("Could not allocate frame for hw decode");
+			    return -1;
+		    }
+	    }	
+    }
+	
 
 	m_bInitFrame	= true;
 

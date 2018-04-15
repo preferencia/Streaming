@@ -1,5 +1,5 @@
 CXX = g++ 
-INCS = -I./ -I../ -I../Common -I../StreamServer -I../FFMPEG/Linux/include
+INCS = -I./ -I../ -I../Common -I../StreamServer -I/usr/include
 LIBS = -lpthread
 
 CXXFLAGS = -Wall -g -O2 -m64 -D_REENTRANT	

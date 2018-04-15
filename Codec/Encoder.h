@@ -14,7 +14,7 @@ public:
                                                 int64_t& llPts, int64_t& llPktPts, int64_t& llPktDts);
 
 	virtual void				SetCallbackProc(void* pObject, WriteEncFrameCallback pWriteEncFrameCallback);
-	virtual void				SetVideoSrcInfo(AVPixelFormat AVSrcPixFmt, int nSrcWidth, int nSrcHeight);
+	virtual void				SetVideoSrcInfo(AVBufferRef* pHwFramesCtx, AVPixelFormat AVSrcPixFmt, int nSrcWidth, int nSrcHeight);
 	virtual int64_t				Encode(int nStreamIndex,
 									   unsigned char* pSrcData, unsigned int uiSrcDataSize,
 									   unsigned char** ppEncData, unsigned int& uiEncDataSize);
@@ -34,15 +34,15 @@ protected:
 	virtual int					InitFrame();
 
 private:
-	AVFrame*					m_pVideoFrame;
-	AVFrame*					m_pAudioFrame;
+	AVFrame*								m_pVideoFrame;
+	AVFrame*								m_pAudioFrame;
 
 	// Video Src Info (for scaling)
-	AVPixelFormat				m_AVSrcPixFmt; 
-	int							m_nSrcWidth; 
-	int							m_nSrcHeight;
+	AVPixelFormat						m_AVSrcPixFmt; 
+	int											m_nSrcWidth; 
+	int											m_nSrcHeight;
 
-	void*						m_pObject;
+	void*										m_pObject;
 	WriteEncFrameCallback		m_pWriteEncFrameCallback;
 };
 

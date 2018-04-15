@@ -5,7 +5,6 @@
 #pragma warning(disable:4996)
 #endif
 
-
 CEncoder::CEncoder()
 {
 	m_nCodecType				= OBJECT_TYPE_ENCODER;
@@ -21,7 +20,6 @@ CEncoder::CEncoder()
 	m_pWriteEncFrameCallback	= NULL;
 }
 
-
 CEncoder::~CEncoder()
 {
 	if (NULL != m_pVideoFrame)
@@ -36,7 +34,6 @@ CEncoder::~CEncoder()
 		m_pAudioFrame = NULL;
 	}
 }
-
 
 void CEncoder::SetFramePtsData(int nStreamIndex, 
                                int64_t llPts, int64_t llPktPts, int64_t llPktDts)
@@ -97,21 +94,30 @@ void CEncoder::GetFramePtsData(int nStreamIndex,
     llPktDts    = pFrame->pkt_dts;
 }
 
-
 void CEncoder::SetCallbackProc(void* pObject, WriteEncFrameCallback pWriteEncFrameCallback)
 {
 	m_pObject					= pObject;
 	m_pWriteEncFrameCallback	= pWriteEncFrameCallback;
 }
 
-
-void CEncoder::SetVideoSrcInfo(AVPixelFormat AVSrcPixFmt, int nSrcWidth, int nSrcHeight)
+void CEncoder::SetVideoSrcInfo(AVBufferRef* pHwFramesCtx, AVPixelFormat AVSrcPixFmt, int nSrcWidth, int nSrcHeight)
 {
+	TraceLog("Input hw frames ctx = 0x%08X, src pixel fmt = %d", pHwFramesCtx, AVSrcPixFmt);
+	
+    if (NULL != pHwFramesCtx)
+    {
+        if (NULL != m_pHwFramesCtx)
+        {
+            av_buffer_unref(&m_pHwFramesCtx);
+        }
+
+        m_pHwFramesCtx = av_buffer_ref(pHwFramesCtx);
+    }
+
 	m_AVSrcPixFmt				= AVSrcPixFmt;
 	m_nSrcWidth					= nSrcWidth;
 	m_nSrcHeight				= nSrcHeight;
 }
-
 
 int64_t CEncoder::Encode(int nStreamIndex,
 						 unsigned char* pSrcData, unsigned int uiSrcDataSize,
@@ -160,85 +166,37 @@ int64_t CEncoder::Encode(int nStreamIndex, AVFrame* pFrame,
 		return -2;
 	}
 
-	uint8_t**		pOrgData = NULL;
-	int				pVideoDstLineSize[_DEC_PLANE_SIZE] = { 0, };
-	uint8_t*		pVideoDstData[_DEC_PLANE_SIZE] = { 0, };
-	unsigned int	uiDataSize = 0;
-	int				nGotOutput = 0;
+	unsigned int	uiDataSize  = 0;
+	int				nGotOutput  = 0;
+    int             nRet        = 0;
 
-	if (nStreamIndex == AVMEDIA_TYPE_VIDEO)
+    // initalize packet to remove prev data
+    InitPacket();
+
+    switch (nStreamIndex)
 	{
-		pOrgData = (uint8_t**)pFrame->data;
-
-		uiDataSize = av_image_alloc(pVideoDstData, pVideoDstLineSize, m_nSrcWidth, m_nSrcHeight, m_AVSrcPixFmt, 1);
-
-		av_image_copy(pVideoDstData, pVideoDstLineSize, (const uint8_t**)(pFrame->data), pFrame->linesize,
-					  m_AVSrcPixFmt, m_nSrcWidth, m_nSrcHeight);
-
-		pFrame->data[0] = pVideoDstData[0];
-	}
-	else if (nStreamIndex == AVMEDIA_TYPE_AUDIO)
-	{
-		uiDataSize = pFrame->nb_samples * av_get_bytes_per_sample((AVSampleFormat)pFrame->format);
-	}
-
-	if (0 < uiDataSize)
-	{		
-		// initalize packet to remove prev data
-		InitPacket();
-
-		switch (nStreamIndex)
-		{
-		case AVMEDIA_TYPE_VIDEO:
-		{
-			// scaling
-			unsigned char*	pScalingData = NULL;
-			int				nDstWidth = m_pVideoCtx->width;
-			int				nDstHeight = m_pVideoCtx->height;
-			AVPixelFormat	AVDstPixFmt = m_pVideoCtx->pix_fmt;
-			int64_t			llScalingDataSize = ScalingVideo(m_nSrcWidth, m_nSrcHeight, m_AVSrcPixFmt, pFrame->data[0],
-				nDstWidth, nDstHeight, AVDstPixFmt, &pScalingData);
-
-			if ((0 >= llScalingDataSize) || (NULL == pScalingData))
-			{
-				return -3;
-			}
-
-			pFrame->data[0] = pScalingData;
-
-			avcodec_encode_video2(m_pVideoCtx, &m_Pkt, pFrame, &nGotOutput);
-
-			av_freep(&pScalingData);
-			pScalingData = NULL;
+    case AVMEDIA_TYPE_VIDEO:
+	    {
+            pFrame->pts = m_pVideoFrame->pts;
+            //pFrame->pict_type = AV_PICTURE_TYPE_NONE;
+            nRet = avcodec_encode_video2(m_pVideoCtx, &m_Pkt, pFrame, &nGotOutput);
 		}
 		break;
 
-		case AVMEDIA_TYPE_AUDIO:
+	case AVMEDIA_TYPE_AUDIO:
 		{
-			avcodec_encode_audio2(m_pVideoCtx, &m_Pkt, pFrame, &nGotOutput);
+            nRet = avcodec_encode_audio2(m_pAudioCtx, &m_Pkt, pFrame, &nGotOutput);
 		}
 		break;
 
-		default:
-			break;
-		}
+	default:
+        break;
+    }
 
-		uiEncDataSize = PacketToBuffer(nStreamIndex, nGotOutput, ppEncData);
-	}
-
-	if (nStreamIndex == AVMEDIA_TYPE_VIDEO)
-	{
-		pFrame->data[0] = *pOrgData;
-	}
-
-	if (NULL != pVideoDstData[0])
-	{
-		av_free(pVideoDstData[0]);
-	}
+	uiEncDataSize = PacketToBuffer(nStreamIndex, nGotOutput, ppEncData);
 
 	return 0;
 }
-
 
 int64_t CEncoder::EncodeVideo(unsigned char* pSrcData, unsigned int uiSrcDataSize,
 							  unsigned char** ppEncData, unsigned int& uiEncDataSize)
@@ -253,38 +211,38 @@ int64_t CEncoder::EncodeVideo(unsigned char* pSrcData, unsigned int uiSrcDataSiz
 		return -2;
 	}
 
+    int						nDstWidth					= m_pVideoCtx->width;
+	int						nDstHeight				= m_pVideoCtx->height;
+	AVPixelFormat	AVDstPixFmt				= m_pVideoCtx->pix_fmt;
+
 	// scaling
-	unsigned char*	pScalingData		= NULL;
-	int				nDstWidth			= m_pVideoCtx->width;
-	int				nDstHeight			= m_pVideoCtx->height;
-	AVPixelFormat	AVDstPixFmt			= m_pVideoCtx->pix_fmt;
-	int64_t			llScalingDataSize	= ScalingVideo(m_nSrcWidth, m_nSrcHeight, m_AVSrcPixFmt, pSrcData,
-													   nDstWidth, nDstHeight, AVDstPixFmt, &pScalingData);
+	unsigned char*	pScalingData			= NULL;
+	int64_t				llScalingDataSize	= ScalingVideo(m_nSrcWidth, m_nSrcHeight, m_AVSrcPixFmt, pSrcData,
+																							nDstWidth, nDstHeight, AVDstPixFmt, &pScalingData);
 
 	if ((0 >= llScalingDataSize) || (NULL == pScalingData))
 	{
+		TraceLog("Scaling failed - size = %lld, data = 0x%08X", llScalingDataSize, pScalingData);
 		return -3;
 	}
 
-	int				nGotOutput			= 0;
-	int64_t			llRet				= 0;
+	int					nGotOutput			= 0;
+	int64_t			llRet						= 0;
 
-	m_pVideoFrame->format				= m_pVideoCtx->pix_fmt;
-	m_pVideoFrame->width				= m_pVideoCtx->width;
+	m_pVideoFrame->format				= AVDstPixFmt;
+	m_pVideoFrame->width					= m_pVideoCtx->width;
 	m_pVideoFrame->height				= m_pVideoCtx->height;
 
 	/* the image can be allocated by any means and av_image_alloc() is
 	* just the most convenient way if av_malloc() is to be used */
 	//llRet = av_image_alloc(m_pVideoFrame->data, m_pVideoFrame->linesize, m_pVideoCtx->width, m_pVideoCtx->height, m_pVideoCtx->pix_fmt, 32);
 	llRet = av_image_alloc(m_pVideoFrame->data, m_pVideoFrame->linesize, nDstWidth, nDstHeight, AVDstPixFmt, 32);
-	//if ((0 > llRet) || (llRet != uiSrcDataSize))
-	if ((0 > llRet) || (llRet != llScalingDataSize))
+	if (0 > llRet)
 	{
 		llRet = -4;
 		goto $REMOVE_SCALE_DATA;
 	}
 
-	//memcpy(m_pVideoFrame->data[0], pSrcData, uiSrcDataSize);
 	memcpy(m_pVideoFrame->data[0], pScalingData, llScalingDataSize);
 
 	// initalize packet to remove prev data
@@ -416,7 +374,6 @@ int64_t	CEncoder::EncodeDelayedFrame(int nStreamIndex, unsigned char** ppEncData
 	return 0;
 }
 
-
 int64_t CEncoder::PacketToBuffer(int nStreamIndex, int nGotOutput, unsigned char** ppEncData)
 {
 	if ((0 >= nGotOutput) || (NULL == ppEncData) || (NULL != *ppEncData))
@@ -439,7 +396,6 @@ int64_t CEncoder::PacketToBuffer(int nStreamIndex, int nGotOutput, unsigned char
 
 	return llRet;
 }
-
 
 int CEncoder::InitFrame()
 {
@@ -468,7 +424,7 @@ int CEncoder::InitFrame()
 			return -2;
 		}
 
-		m_pAudioFrame->pts		= 0;
+		m_pAudioFrame->pts			= 0;
 		m_pAudioFrame->pkt_pts	= 0;
 		m_pAudioFrame->pkt_dts	= 0;
 	}	
