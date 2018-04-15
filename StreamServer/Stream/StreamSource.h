@@ -3,6 +3,7 @@
 #include "Common.h"
 #include "Demuxer.h"
 #include "ObjectManager.h"
+#include "HWAccel.h"
 #include <list>
 
 typedef int (*StreamCallback)(void*, int, UINT, void*);
@@ -25,7 +26,7 @@ public:
 
 private:
 #ifdef _USE_FILTER_GRAPH
-	static int			DataProcCallback(void* pObject, int nMediaType, AVFrame* pFrame);
+    static int			DataProcCallback(void* pObject, int nProcType, int nPictType, AVFrame* pFilterFrame);
 #else
 	static int			DataProcCallback(void* pObject, int nProcType, int nPictType, unsigned int uiDataSize, unsigned char* pData);
 #endif
@@ -40,20 +41,17 @@ private:
 	int					ProcFrameData(char cFrameType, UINT uiFrameNum, UINT uiFrameSize, unsigned char* pData);
 
 #ifdef _USE_FILTER_GRAPH
-	int					EncodeFilterFrame(int nStreamIndex);
-	int					EncodeProc(int nMediaType, int nPictType, AVFrame* pFrame);
+	int					EncodeProc(int nMediaType, int nPictType, AVFrame* pFilterFrame);
 #else
-	int					EncodeProc(int nMediaType, int nPictType, unsigned int uiDataSize, unsigned char* pData);
+    int					EncodeProc(int nMediaType, int nPictType, unsigned int uiDataSize, unsigned char* pData);
 #endif
 	int64_t				EncodeDelayedFrame(int nStreamIndex);
 
 	int					SetMuxer();
 	int					SetEncoder();
 
-#ifdef _USE_FILTER_GRAPH
-    int                 InitFilters();
-    int                 InitFilter(FilteringContext* pFilterCtx, AVCodecContext* pDecCtx, AVCodecContext* pEncCtx, const char *pszFilterSpec);
-#endif
+    AVPixelFormat      GetSrcPixFmt(AVPixelFormat AvPixFmt);
+    AVCodecID				GetEncCodecID(AVPixelFormat AvPixFmt);
 	
 	void				Flush();
 	void				ObjectCleanUp();
@@ -62,7 +60,7 @@ private:
 #ifdef _WIN32
 	static unsigned int __stdcall	DecodeThread(void* lpParam);
 #else
-	static void*					DecodeThread(void* lpParam);
+	static void*									DecodeThread(void* lpParam);
 #endif
 
 private:
@@ -89,10 +87,6 @@ private:
 
     int                 m_nTrscCodecCtxSize;
     int                 m_nTrscStreamSize;
-
-#ifdef _USE_FILTER_GRAPH
-	FilteringContext*	m_pFilterCtx;
-#endif
 
 	void*				m_pParent;
 	StreamCallback		m_pStreamCallbackFunc;

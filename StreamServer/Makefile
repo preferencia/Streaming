@@ -1,25 +1,32 @@
 .SUFFIXES : .cpp .o 
 
 CXX = g++ 
-INCS = -I./ -I../ -I./Stream -I./Network/Listen -I./Network/Session -I../Common -I../Codec -I../Multiplex -I../FFMPEG/Linux/include
-LIBS = -lpthread \
-       ../FFMPEG/Linux/lib/libavcodec.so \
-	   ../FFMPEG/Linux/lib/libavformat.so \
-	   ../FFMPEG/Linux/lib/libavfilter.so \
-	   ../FFMPEG/Linux/lib/libavutil.so \
-	   ../FFMPEG/Linux/lib/libpostproc.so \
-	   ../FFMPEG/Linux/lib/libswscale.so \
-	   ../FFMPEG/Linux/lib/libswresample.so \
-	   ../FFMPEG/Linux/lib/libfdk-aac.so \
-#	   ../FFMPEG/Linux/lib/libmp3lame.so \
-#	   ../FFMPEG/Linux/lib/libopus.so \
-#	   ../FFMPEG/Linux/lib/libvpx.so \
-	   ../FFMPEG/Linux/lib/libx264.so \
-	   ../FFMPEG/Linux/lib/libx265.so
+INCS = -I./ -I../ -I./Stream -I./Network/Listen -I./Network/Session -I../Common -I../Codec -I../Multiplex -I/usr/include
+LIBS = -lavdevice		\
+		-lavformat		\
+		-lavfilter		\
+		-lavcodec 		\
+		-lswresample 	\
+		-lswscale 		\
+		-lavutil 			\
+		-lpostproc 		\
+		-lfreetype		\
+		-lfdk-aac 		\
+		-lx264 				\
+		-lva-drm 			\
+		-lva-x11 			\
+		-lva 					\
+		-lX11 				\
+		-ldl 					\
+		-llzma 				\
+		-lz 					\
+		-lpthread 		\
+		-lm
+LIBDIR = -L/usr/lib64
 
 CXXFLAGS = -Wall -g -O2 -m64 -D_REENTRANT -D_THREAD_SAFE	
 NETWORK_OBJS = ListenSocket.o SessionThread.o SocketThread.o SessionSocket.o ConnectSocket.o
-STREAM_OBJS = StreamThread.o StreamSource.o ObjectManager.o Demuxer.o Muxer.o Decoder.o Encoder.o Codec.o
+STREAM_OBJS = StreamThread.o StreamSource.o ObjectManager.o Demuxer.o Muxer.o Decoder.o Encoder.o Codec.o HWAccel.o
 TOTAL_OBJS = StreamServer.o stdafx.o $(NETWORK_OBJS) $(STREAM_OBJS)
 SRCS = StreamServer.cpp stdafx.cpp
 TARGET = StreamServer
@@ -55,7 +62,7 @@ _LISTEN :
 	
 $(TARGET) :
 	$(CXX) $(SRCS) -c $< $(CXXFLAGS) $(INCS)
-	$(CXX) $(CXXFLAGS) $(INCS) -o $@ $(TOTAL_OBJS) $(LIBS)
+	$(CXX) $(CXXFLAGS) $(LIBDIR) -o $@ $(TOTAL_OBJS) $(LIBS)
 	
 clean : 
 	rm -rf $(TOTAL_OBJS) $(TARGET)
